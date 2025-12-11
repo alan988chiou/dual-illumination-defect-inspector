@@ -221,6 +221,11 @@ class AOIInspector(QMainWindow):
         layout_bf.addSpacing(5)
         layout_bf.addWidget(QLabel("Threshold:"))
 
+        self.chk_bf_inverse = QCheckBox("Inverse Threshold")
+        self.chk_bf_inverse.setChecked(False)
+        self.chk_bf_inverse.stateChanged.connect(self.update_result)
+        layout_bf.addWidget(self.chk_bf_inverse)
+
         bf_input_layout = QHBoxLayout()
         self.slider_bf = QSlider(Qt.Horizontal)
         self.slider_bf.setRange(0, 255)
@@ -255,6 +260,11 @@ class AOIInspector(QMainWindow):
 
         layout_df.addSpacing(5)
         layout_df.addWidget(QLabel("Threshold:"))
+
+        self.chk_df_inverse = QCheckBox("Inverse Threshold")
+        self.chk_df_inverse.setChecked(False)
+        self.chk_df_inverse.stateChanged.connect(self.update_result)
+        layout_df.addWidget(self.chk_df_inverse)
 
         df_input_layout = QHBoxLayout()
         self.slider_df = QSlider(Qt.Horizontal)
@@ -381,6 +391,8 @@ class AOIInspector(QMainWindow):
     def load_settings(self):
         self.slider_bf.setValue(self.settings.value("thresholds/bf", 200, int))
         self.slider_df.setValue(self.settings.value("thresholds/df", 10, int))
+        self.chk_bf_inverse.setChecked(self.settings.value("thresholds/bf_inverse", False, bool))
+        self.chk_df_inverse.setChecked(self.settings.value("thresholds/df_inverse", False, bool))
         self.spin_df_ksize.setValue(self.settings.value("mask/df_ksize", 3, int))
         self.spin_df_iter.setValue(self.settings.value("mask/df_iter", 1, int))
         self.chk_bf.setChecked(self.settings.value("mask/show_bf", True, bool))
@@ -395,6 +407,8 @@ class AOIInspector(QMainWindow):
     def save_settings(self):
         self.settings.setValue("thresholds/bf", self.slider_bf.value())
         self.settings.setValue("thresholds/df", self.slider_df.value())
+        self.settings.setValue("thresholds/bf_inverse", self.chk_bf_inverse.isChecked())
+        self.settings.setValue("thresholds/df_inverse", self.chk_df_inverse.isChecked())
         self.settings.setValue("mask/df_ksize", self.spin_df_ksize.value())
         self.settings.setValue("mask/df_iter", self.spin_df_iter.value())
         self.settings.setValue("mask/show_bf", self.chk_bf.isChecked())
@@ -555,6 +569,8 @@ class AOIInspector(QMainWindow):
         thresh_df = self.spin_df.value()
         show_bf_mask = self.chk_bf.isChecked()
         show_df_mask = self.chk_df.isChecked()
+        inverse_bf = self.chk_bf_inverse.isChecked()
+        inverse_df = self.chk_df_inverse.isChecked()
         blur_bf = self.chk_bf_blur.isChecked()
         blur_ksize = self.spin_bf_ksize.value()
 
@@ -578,6 +594,7 @@ class AOIInspector(QMainWindow):
             show_mask=show_bf_mask,
             blur_enabled=blur_bf,
             blur_ksize=blur_ksize,
+            inverse_threshold=inverse_bf,
         )
 
         self.current_bf_processed = bf_processed
@@ -588,6 +605,7 @@ class AOIInspector(QMainWindow):
             show_mask=show_df_mask,
             ksize=ksize,
             iters=iters,
+            inverse_threshold=inverse_df,
         )
 
         self.current_df_processed = df_processed

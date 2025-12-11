@@ -3,8 +3,14 @@ import cv2
 import numpy as np
 
 
-def process_dark_field(img_df_gray, thresh_df, show_mask=True,
-                       ksize=3, iters=1):
+def process_dark_field(
+    img_df_gray,
+    thresh_df,
+    show_mask=True,
+    ksize=3,
+    iters=1,
+    inverse_threshold=False,
+):
     """
     Dark field image processing:
     - Input: grayscale DF image, threshold, whether to show mask, dilation kernel size/iterations
@@ -18,7 +24,8 @@ def process_dark_field(img_df_gray, thresh_df, show_mask=True,
         return None, None, None, None
 
     # 1. Thresholding
-    _, mask_df_raw = cv2.threshold(img_df_gray, thresh_df, 255, cv2.THRESH_BINARY)
+    threshold_type = cv2.THRESH_BINARY_INV if inverse_threshold else cv2.THRESH_BINARY
+    _, mask_df_raw = cv2.threshold(img_df_gray, thresh_df, 255, threshold_type)
 
     # 2. Dilation (iterations=0 means skip dilation)
     if iters > 0 and ksize > 1:

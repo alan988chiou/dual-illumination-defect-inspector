@@ -9,6 +9,7 @@ def process_bright_field(
     show_mask=True,
     blur_enabled=False,
     blur_ksize=3,
+    inverse_threshold=False,
 ):
     """
     Bright field image processing:
@@ -27,7 +28,8 @@ def process_bright_field(
         bf_for_process = cv2.GaussianBlur(img_bf_gray, (ksize, ksize), 0)
 
     # Binary mask
-    _, mask_bf = cv2.threshold(bf_for_process, thresh_bf, 255, cv2.THRESH_BINARY)
+    threshold_type = cv2.THRESH_BINARY_INV if inverse_threshold else cv2.THRESH_BINARY
+    _, mask_bf = cv2.threshold(bf_for_process, thresh_bf, 255, threshold_type)
 
     # BGR image for display
     view_bf_bgr = cv2.cvtColor(bf_for_process, cv2.COLOR_GRAY2BGR)
