@@ -1,3 +1,5 @@
+import os
+
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QFileDialog,
     QDialog, QTabWidget, QComboBox, QLineEdit, QMessageBox
@@ -6,17 +8,19 @@ from PySide6.QtWidgets import (
 
 class LoadImageDialog(QDialog):
     """
-    Load Image 設定視窗：
-    3 種模式：
-      1. Time-division：一張圖垂直分上下半部
-      2. Multispectral：一張彩色圖依通道分明/暗場
-      3. Separate：明/暗場各讀一張圖
+    Load Image configuration dialog with three modes:
+      1. Time-division: one image vertically split into BF/DF.
+      2. Multispectral: one color image separated by channel for BF/DF.
+      3. Separate: individual images for BF and DF.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, settings=None, default_dir=""):
         super().__init__(parent)
         self.setWindowTitle("Load Image Mode")
         self.resize(520, 260)
+
+        self.settings = settings
+        self.default_dir = default_dir
 
         self.tab_widget = QTabWidget(self)
 
@@ -51,6 +55,8 @@ class LoadImageDialog(QDialog):
         main_layout.addWidget(self.tab_widget)
         main_layout.addLayout(btn_layout)
 
+        self.load_settings()
+
     # ---------- Time-division tab ----------
     def _init_tab_time(self):
         layout = QVBoxLayout(self.tab_time)
@@ -74,9 +80,20 @@ class LoadImageDialog(QDialog):
 
         layout.addStretch()
 
+    def _get_initial_dir(self, key):
+        if self.settings is None:
+            return self.default_dir
+        saved = self.settings.value(key, self.default_dir, str)
+        if saved and os.path.isdir(saved):
+            return saved
+        if saved and os.path.isdir(os.path.dirname(saved)):
+            return os.path.dirname(saved)
+        return self.default_dir
+
     def browse_time_file(self):
+        initial_dir = self._get_initial_dir("dialog/time_file_dir")
         fn, _ = QFileDialog.getOpenFileName(
-            self, "Open Time-division Image", "", "Image Files (*.bmp *.png *.jpg *.jpeg)"
+            self, "Open Time-division Image", initial_dir, "Image Files (*.bmp *.png *.jpg *.jpeg)"
         )
         if fn:
             self.edit_time_file.setText(fn)
@@ -89,7 +106,6 @@ class LoadImageDialog(QDialog):
         ch_layout = QHBoxLayout()
         ch_layout.addWidget(QLabel("BF Channel:"))
         self.combo_multi_bf_ch = QComboBox()
-        # 顯示 R/G/B，實際會對應到 OpenCV 的 BGR index
         self.combo_multi_bf_ch.addItems(["Red", "Green", "Blue"])
 
         ch_layout.addWidget(self.combo_multi_bf_ch)
@@ -114,8 +130,9 @@ class LoadImageDialog(QDialog):
         layout.addStretch()
 
     def browse_multi_file(self):
+        initial_dir = self._get_initial_dir("dialog/multi_file_dir")
         fn, _ = QFileDialog.getOpenFileName(
-            self, "Open Multispectral Image", "", "Image Files (*.bmp *.png *.jpg *.jpeg)"
+            self, "Open Multispectral Image", initial_dir, "Image Files (*.bmp *.png *.jpg *.jpeg)"
         )
         if fn:
             self.edit_multi_file.setText(fn)
@@ -147,23 +164,24 @@ class LoadImageDialog(QDialog):
         layout.addStretch()
 
     def browse_sep_bf(self):
+        initial_dir = self._get_initial_dir("dialog/separate_bf_dir")
         fn, _ = QFileDialog.getOpenFileName(
-            self, "Open BF Image", "", "Image Files (*.bmp *.png *.jpg *.jpeg)"
+            self, "Open BF Image", initial_dir, "Image Files (*.bmp *.png *.jpg *.jpeg)"
         )
         if fn:
             self.edit_sep_bf.setText(fn)
 
     def browse_sep_df(self):
+        initial_dir = self._get_initial_dir("dialog/separate_df_dir")
         fn, _ = QFileDialog.getOpenFileName(
-            self, "Open DF Image", "", "Image Files (*.bmp *.png *.jpg *.jpeg)"
+            self, "Open DF Image", initial_dir, "Image Files (*.bmp *.png *.jpg *.jpeg)"
         )
         if fn:
             self.edit_sep_df.setText(fn)
 
-    # ---------- OK / 取得設定 ----------
+    # ---------- OK / Retrieve configuration ----------
 
     def accept_clicked(self):
-        # 簡單檢查必填欄位
         mode = self.current_mode()
         if mode == "time":
             if not self.edit_time_file.text():
@@ -191,9 +209,7 @@ class LoadImageDialog(QDialog):
 
     def get_config(self):
         """
-        回傳 dict:
-          mode: "time" / "multi" / "separate"
-          依模式附上對應參數
+        Return a dict containing the selected mode and related parameters.
         """
         mode = self.current_mode()
         if mode == 0 or mode == "time":
@@ -207,13 +223,13 @@ class LoadImageDialog(QDialog):
             return {
                 "mode": "time",
                 "file": self.edit_time_file.text(),
-                "bf_position": self.combo_time_bf_pos.currentText(),  # "Upper half" or "Lower half"
+                "bf_position": self.combo_time_bf_pos.currentText(),
             }
         elif mode == "multi":
             return {
                 "mode": "multi",
                 "file": self.edit_multi_file.text(),
-                "bf_channel": self.combo_multi_bf_ch.currentText(),  # "Red"/"Green"/"Blue"
+                "bf_channel": self.combo_multi_bf_ch.currentText(),
                 "df_channel": self.combo_multi_df_ch.currentText(),
             }
         else:
@@ -222,3 +238,45 @@ class LoadImageDialog(QDialog):
                 "file_bf": self.edit_sep_bf.text(),
                 "file_df": self.edit_sep_df.text(),
             }
+
+    def load_settings(self):
+        if self.settings is None:
+            return
+        mode_idx = self.settings.value("dialog/mode_index", 0, int)
+        self.tab_widget.setCurrentIndex(mode_idx)
+        self.combo_time_bf_pos.setCurrentText(
+            self.settings.value("dialog/time_bf_position", "Upper half", str)
+        )
+        self.combo_multi_bf_ch.setCurrentText(
+            self.settings.value("dialog/multi_bf_channel", "Red", str)
+        )
+        self.combo_multi_df_ch.setCurrentText(
+            self.settings.value("dialog/multi_df_channel", "Green", str)
+        )
+
+        self.edit_time_file.setText(self.settings.value("dialog/time_file", "", str))
+        self.edit_multi_file.setText(self.settings.value("dialog/multi_file", "", str))
+        self.edit_sep_bf.setText(self.settings.value("dialog/sep_bf_file", "", str))
+        self.edit_sep_df.setText(self.settings.value("dialog/sep_df_file", "", str))
+
+    def save_settings(self):
+        if self.settings is None:
+            return
+        self.settings.setValue("dialog/mode_index", self.tab_widget.currentIndex())
+        self.settings.setValue("dialog/time_bf_position", self.combo_time_bf_pos.currentText())
+        self.settings.setValue("dialog/multi_bf_channel", self.combo_multi_bf_ch.currentText())
+        self.settings.setValue("dialog/multi_df_channel", self.combo_multi_df_ch.currentText())
+
+        self.settings.setValue("dialog/time_file", self.edit_time_file.text())
+        self.settings.setValue("dialog/multi_file", self.edit_multi_file.text())
+        self.settings.setValue("dialog/sep_bf_file", self.edit_sep_bf.text())
+        self.settings.setValue("dialog/sep_df_file", self.edit_sep_df.text())
+
+        if self.edit_time_file.text():
+            self.settings.setValue("dialog/time_file_dir", os.path.dirname(self.edit_time_file.text()))
+        if self.edit_multi_file.text():
+            self.settings.setValue("dialog/multi_file_dir", os.path.dirname(self.edit_multi_file.text()))
+        if self.edit_sep_bf.text():
+            self.settings.setValue("dialog/separate_bf_dir", os.path.dirname(self.edit_sep_bf.text()))
+        if self.edit_sep_df.text():
+            self.settings.setValue("dialog/separate_df_dir", os.path.dirname(self.edit_sep_df.text()))

@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (
     QDialog, QMessageBox
 )
 
-from PySide6.QtCore import Qt, Slot, QTimer
+from PySide6.QtCore import Qt, Slot, QTimer, QSettings
 from PySide6.QtGui import QImage, QPixmap, QResizeEvent
 
 from sync_image_viewer import SyncImageViewer
@@ -20,46 +20,74 @@ from load_image_dialog import LoadImageDialog
 BACKGROUND_COLOR_CSS = "background: rgb(128, 128, 128);"
 
 
+def read_image_unicode(path: str, flags):
+    if not path:
+        return None
+    try:
+        data = np.fromfile(path, dtype=np.uint8)
+    except (FileNotFoundError, OSError):
+        return None
+    if data.size == 0:
+        return None
+    return cv2.imdecode(data, flags)
+
+
+def save_image_unicode(path: str, image: np.ndarray) -> bool:
+    if image is None or not path:
+        return False
+    ext = os.path.splitext(path)[1] or ".bmp"
+    success, encoded = cv2.imencode(ext, image)
+    if not success:
+        return False
+    try:
+        encoded.tofile(path)
+    except (FileNotFoundError, OSError):
+        return False
+    return True
+
+
 class AOIInspector(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("AOI Defect Inspector")
         self.resize(1200, 850)
 
+        self.settings = QSettings("DualIllumination", "AOIInspector")
+
         self._status_bar = self.statusBar()
         self._status_bar.showMessage("Cursor: -")
 
-        # 原始 BF / DF 影像（灰階，分割後）
+        # Original BF / DF grayscale images (split from source)
         self.img_bf_original = None
         self.img_df_original = None
 
-        # 計算用（目前就是指向 original）
+        # References used during computation (currently point to original)
         self.current_bf_gray = None
         self.current_df_gray = None
 
-        # Viewer 用 pixmap
+        # Pixmaps used by viewers
         self.pixmap_bf = None
         self.pixmap_df = None
         self.pixmap_res = None
 
-        # Viewer 對應的最新 BGR 圖（用來存標記圖）
+        # Latest BGR images for saving annotated views
         self.last_view_bf_bgr = None
         self.last_view_df_bgr = None
         self.last_view_res_bgr = None
 
-        # 來源檔名 / 副檔名（用來命名輸出）
+        # Source filename and extension (used for output naming)
         self.last_input_name = "Output"
         self.last_input_ext = ".bmp"
 
-        # 顯示影像尺寸
+        # Displayed image size
         self.disp_w = None
         self.disp_h = None
 
-        # 顯示座標 -> 原圖座標比例
+        # Ratio between displayed coordinates and original coordinates
         self.coord_scale_x = 1.0
         self.coord_scale_y = 1.0
 
-        # 共用平移 / 縮放狀態
+        # Shared pan/zoom state
         self.view_state = {
             "scale": 1.0,
             "center_x": 0.0,
@@ -74,7 +102,7 @@ class AOIInspector(QMainWindow):
         self.spin_delay_timer.setInterval(1000)
         self.spin_delay_timer.timeout.connect(self.update_result)
 
-        # Saved / Error / Loading / Processing 自動恢復用計時器
+        # Timer used to restore status text after temporary states
         self.status_timer = QTimer()
         self.status_timer.setSingleShot(True)
         self.status_timer.timeout.connect(self.set_status_info)
@@ -82,6 +110,7 @@ class AOIInspector(QMainWindow):
         self.reset_view_next_update = False
 
         self.init_ui()
+        self.load_settings()
 
     def init_ui(self):
         main_widget = QWidget()
@@ -91,7 +120,7 @@ class AOIInspector(QMainWindow):
         main_layout.setContentsMargins(5, 5, 5, 5)
         main_layout.setSpacing(5)
 
-        # 左側：三個影像視窗
+        # Left side: three synchronized image viewers
         self.image_container = QWidget()
         self.image_layout = QVBoxLayout(self.image_container)
         self.image_layout.setContentsMargins(0, 0, 0, 0)
@@ -121,7 +150,7 @@ class AOIInspector(QMainWindow):
 
         main_layout.addWidget(self.image_container, 1)
 
-        # 右側：控制面板
+        # Right side: control panel
         control_panel = QFrame()
         control_panel.setFrameShape(QFrame.StyledPanel)
         control_panel.setFixedWidth(260)
@@ -145,7 +174,7 @@ class AOIInspector(QMainWindow):
         self.btn_load.clicked.connect(self.load_image)
         layout_op.addWidget(self.btn_load)
 
-        # 存檔按鈕
+        # Save buttons
         self.btn_save_bfdf = QPushButton("Save BF/DF Image")
         self.btn_save_bfdf.setMinimumHeight(40)
         self.btn_save_bfdf.clicked.connect(self.save_bf_df)
@@ -257,32 +286,32 @@ class AOIInspector(QMainWindow):
         control_layout.addStretch()
         main_layout.addWidget(control_panel, 0)
 
-        # 最後統一設成 Info 狀態，並根據是否有影像決定按鈕啟用
+        # Initialize with Info status and enable buttons based on whether images are loaded
         self.set_status_info()
 
-    # ---------- 狀態顯示 & 按鈕啟用 helper ----------
+    # ---------- Status display & button state helpers ----------
 
     def update_buttons_state(self, info_state: bool):
         """
-        info_state = True  : Status 為 Info (Ready 等)，按鈕依是否有影像決定啟用
-        info_state = False : Loading / Processing / Saving / Error 等，所有按鈕 disable
+        info_state = True  : Info status (Ready, etc.), enable buttons based on image availability
+        info_state = False : Non-info status (Loading / Processing / Saving / Error), disable all buttons
         """
-        # init_ui 早期呼叫時可能按鈕還沒建好
+        # Guard against early calls before init_ui creates buttons
         if not hasattr(self, "btn_load"):
             return
 
         if not info_state:
-            # 非 info 狀態：所有 button disable
+            # Non-info status: disable all buttons
             self.btn_load.setEnabled(False)
             self.btn_save_bfdf.setEnabled(False)
             self.btn_save_result.setEnabled(False)
             return
 
-        # info 狀態：Load 永遠可按
+        # Info status: Load is always enabled
         self.btn_load.setEnabled(True)
 
         has_img = self.img_bf_original is not None and self.img_df_original is not None
-        # 還沒 Load 圖片時 Save button disable
+        # Save buttons disabled until images are loaded
         self.btn_save_bfdf.setEnabled(has_img)
 
         has_result_view = (
@@ -314,7 +343,7 @@ class AOIInspector(QMainWindow):
             "padding: 6px;"
         )
         self.update_buttons_state(info_state=False)
-        self.status_timer.start(1000)  # 1 秒後自動改回 Ready
+        self.status_timer.start(1000)  # Automatically revert to Ready after 1 second
 
     def set_status_error(self, text="Error"):
         self.status_label.setText(text)
@@ -327,6 +356,33 @@ class AOIInspector(QMainWindow):
         )
         self.update_buttons_state(info_state=False)
         self.status_timer.start(3000)
+
+    def load_settings(self):
+        self.slider_bf.setValue(self.settings.value("thresholds/bf", 200, int))
+        self.slider_df.setValue(self.settings.value("thresholds/df", 10, int))
+        self.spin_df_ksize.setValue(self.settings.value("mask/df_ksize", 3, int))
+        self.spin_df_iter.setValue(self.settings.value("mask/df_iter", 1, int))
+        self.chk_bf.setChecked(self.settings.value("mask/show_bf", True, bool))
+        self.chk_df.setChecked(self.settings.value("mask/show_df", True, bool))
+
+        self.view_state["scale"] = self.settings.value("view/scale", self.view_state["scale"], float)
+        self.view_state["center_x"] = self.settings.value("view/center_x", self.view_state["center_x"], float)
+        self.view_state["center_y"] = self.settings.value("view/center_y", self.view_state["center_y"], float)
+
+    def save_settings(self):
+        self.settings.setValue("thresholds/bf", self.slider_bf.value())
+        self.settings.setValue("thresholds/df", self.slider_df.value())
+        self.settings.setValue("mask/df_ksize", self.spin_df_ksize.value())
+        self.settings.setValue("mask/df_iter", self.spin_df_iter.value())
+        self.settings.setValue("mask/show_bf", self.chk_bf.isChecked())
+        self.settings.setValue("mask/show_df", self.chk_df.isChecked())
+        self.settings.setValue("view/scale", self.view_state.get("scale", 1.0))
+        self.settings.setValue("view/center_x", self.view_state.get("center_x", 0.0))
+        self.settings.setValue("view/center_y", self.view_state.get("center_y", 0.0))
+
+    def closeEvent(self, event):
+        self.save_settings()
+        super().closeEvent(event)
 
     # ---------- Slider / SpinBox ----------
 
@@ -357,8 +413,14 @@ class AOIInspector(QMainWindow):
 
     # ---------- Load Image (3 modes) ----------
 
+    def get_default_image_dir(self):
+        images_dir = os.path.join(os.getcwd(), "images")
+        if os.path.isdir(images_dir):
+            return images_dir
+        return os.getcwd()
+
     def set_last_input_file(self, path: str):
-        """記錄輸入檔名與副檔名，供存檔命名使用"""
+        """Record input filename and extension for saving results."""
         if not path:
             self.last_input_name = "Output"
             self.last_input_ext = ".bmp"
@@ -369,9 +431,11 @@ class AOIInspector(QMainWindow):
         self.last_input_ext = ext if ext else ".bmp"
 
     def load_image(self):
-        dlg = LoadImageDialog(self)
+        dlg = LoadImageDialog(self, self.settings, default_dir=self.get_default_image_dir())
         if dlg.exec() != QDialog.Accepted:
             return
+
+        dlg.save_settings()
 
         cfg = dlg.get_config()
         mode = cfg["mode"]
@@ -385,7 +449,7 @@ class AOIInspector(QMainWindow):
 
         if mode == "time":
             path = cfg["file"]
-            img_gray = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
+            img_gray = read_image_unicode(path, cv2.IMREAD_GRAYSCALE)
             if img_gray is None:
                 self.set_status_error("Load failed")
                 return
@@ -401,7 +465,7 @@ class AOIInspector(QMainWindow):
 
         elif mode == "multi":
             path = cfg["file"]
-            img_color = cv2.imread(path, cv2.IMREAD_COLOR)
+            img_color = read_image_unicode(path, cv2.IMREAD_COLOR)
             if img_color is None:
                 self.set_status_error("Load failed")
                 return
@@ -424,8 +488,8 @@ class AOIInspector(QMainWindow):
             path_bf = cfg["file_bf"]
             path_df = cfg["file_df"]
 
-            img_bf_gray = cv2.imread(path_bf, cv2.IMREAD_GRAYSCALE)
-            img_df_gray = cv2.imread(path_df, cv2.IMREAD_GRAYSCALE)
+            img_bf_gray = read_image_unicode(path_bf, cv2.IMREAD_GRAYSCALE)
+            img_df_gray = read_image_unicode(path_df, cv2.IMREAD_GRAYSCALE)
 
             if img_bf_gray is None or img_df_gray is None:
                 self.set_status_error("Load failed")
@@ -440,13 +504,13 @@ class AOIInspector(QMainWindow):
                 self.set_status_error("Size mismatch")
                 return
 
-            # 以 BF 檔名作為基準命名
+            # Use the BF filename as the naming base
             input_path_for_naming = path_bf
 
-        # 記錄輸入檔名資訊
+        # Record input filename info
         self.set_last_input_file(input_path_for_naming)
 
-        # 設定輸入影像並更新顯示
+        # Set input images and refresh displays
         self.img_bf_original = img_bf_gray
         self.img_df_original = img_df_gray
 
@@ -456,7 +520,7 @@ class AOIInspector(QMainWindow):
     def resizeEvent(self, event: QResizeEvent):
         super().resizeEvent(event)
 
-    # ---------- 核心運算：呼叫明/暗場模組 ----------
+    # ---------- Core processing: invoke bright/dark field modules ----------
 
     def perform_calculation(self):
         if self.img_bf_original is None or self.img_df_original is None:
@@ -525,7 +589,7 @@ class AOIInspector(QMainWindow):
             return
         self.perform_calculation()
 
-    # ---------- 顯示 / 同步縮放 ----------
+    # ---------- Display / synchronized zoom ----------
 
     def update_display_pixmaps(self, view_bf_bgr, view_df_bgr, view_res_bgr):
         if view_bf_bgr is None or view_df_bgr is None or view_res_bgr is None:
@@ -533,7 +597,7 @@ class AOIInspector(QMainWindow):
 
         self.disp_h, self.disp_w, _ = view_bf_bgr.shape
 
-        # 存一份 BGR 給儲存標記圖用
+        # Keep BGR copies for saving annotated images
         self.last_view_bf_bgr = view_bf_bgr.copy()
         self.last_view_df_bgr = view_df_bgr.copy()
         self.last_view_res_bgr = view_res_bgr.copy()
@@ -620,7 +684,7 @@ class AOIInspector(QMainWindow):
             f"View: {view_key} | X: {src_x}  Y: {src_y}  Gray: {val}  | Zoom: {zoom:.2f}x"
         )
 
-    # ---------- 儲存影像 ----------
+    # ---------- Save images ----------
 
     def ensure_result_dir(self):
         result_dir = os.path.join(os.getcwd(), "Result")
@@ -630,8 +694,8 @@ class AOIInspector(QMainWindow):
 
     def save_bf_df(self):
         """
-        存「原始分割後的灰階 BF / DF」
-        檔名: [原檔名]_BF.[原副檔名], [原檔名]_DF.[原副檔名]
+        Save the original split grayscale BF / DF images.
+        Filenames: [input]_BF.[ext] and [input]_DF.[ext]
         """
         if self.img_bf_original is None or self.img_df_original is None:
             self.set_status_error("No image")
@@ -644,17 +708,17 @@ class AOIInspector(QMainWindow):
         bf_path = os.path.join(result_dir, f"{base}_BF{ext}")
         df_path = os.path.join(result_dir, f"{base}_DF{ext}")
 
-        cv2.imwrite(bf_path, self.img_bf_original)
-        cv2.imwrite(df_path, self.img_df_original)
+        save_image_unicode(bf_path, self.img_bf_original)
+        save_image_unicode(df_path, self.img_df_original)
 
         self.set_status_warn("Saving...")
 
     def save_result(self):
         """
-        存三張「標記圖」：
-          1. 明場標記圖 (BF viewer)：[原檔名]_BF_Result.[原副檔名]
-          2. 暗場標記圖 (DF viewer)：[原檔名]_DF_Result.[原副檔名]
-          3. 結果標記圖 (Result viewer)：[原檔名]_Result.[原副檔名]
+        Save three annotated images:
+          1. BF viewer overlay: [input]_BF_Result.[ext]
+          2. DF viewer overlay: [input]_DF_Result.[ext]
+          3. Combined result overlay: [input]_Result.[ext]
         """
         if (
             self.last_view_bf_bgr is None
@@ -672,8 +736,8 @@ class AOIInspector(QMainWindow):
         df_mark_path = os.path.join(result_dir, f"{base}_DF_Result{ext}")
         res_path = os.path.join(result_dir, f"{base}_Result{ext}")
 
-        cv2.imwrite(bf_mark_path, self.last_view_bf_bgr)
-        cv2.imwrite(df_mark_path, self.last_view_df_bgr)
-        cv2.imwrite(res_path, self.last_view_res_bgr)
+        save_image_unicode(bf_mark_path, self.last_view_bf_bgr)
+        save_image_unicode(df_mark_path, self.last_view_df_bgr)
+        save_image_unicode(res_path, self.last_view_res_bgr)
 
         self.set_status_warn("Saving...")
