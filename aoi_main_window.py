@@ -202,12 +202,14 @@ class AOIInspector(QMainWindow):
         layout_bf.addWidget(self.chk_bf)
 
         layout_bf.addSpacing(5)
+        layout_bf.addWidget(QLabel("Blur:"))
+
+        blur_layout = QHBoxLayout()
         self.chk_bf_blur = QCheckBox("Enable Blur")
         self.chk_bf_blur.setChecked(False)
         self.chk_bf_blur.stateChanged.connect(self.update_result)
-        layout_bf.addWidget(self.chk_bf_blur)
+        blur_layout.addWidget(self.chk_bf_blur)
 
-        blur_layout = QHBoxLayout()
         blur_layout.addWidget(QLabel("Kernel Size:"))
         self.spin_bf_ksize = QSpinBox()
         self.spin_bf_ksize.setRange(1, 31)
