@@ -65,6 +65,10 @@ class AOIInspector(QMainWindow):
         self.current_bf_gray = None
         self.current_df_gray = None
 
+        # Grayscale images after preprocessing but before binarization
+        self.current_bf_processed = None
+        self.current_df_processed = None
+
         # Pixmaps used by viewers
         self.pixmap_bf = None
         self.pixmap_df = None
@@ -99,7 +103,7 @@ class AOIInspector(QMainWindow):
 
         self.spin_delay_timer = QTimer()
         self.spin_delay_timer.setSingleShot(True)
-        self.spin_delay_timer.setInterval(1000)
+        self.spin_delay_timer.setInterval(500)
         self.spin_delay_timer.timeout.connect(self.update_result)
 
         # Timer used to restore status text after temporary states
@@ -198,7 +202,31 @@ class AOIInspector(QMainWindow):
         layout_bf.addWidget(self.chk_bf)
 
         layout_bf.addSpacing(5)
+        layout_bf.addWidget(QLabel("Blur:"))
+
+        blur_layout = QHBoxLayout()
+        self.chk_bf_blur = QCheckBox("Enable Blur")
+        self.chk_bf_blur.setChecked(False)
+        self.chk_bf_blur.stateChanged.connect(self.update_result)
+        blur_layout.addWidget(self.chk_bf_blur)
+
+        blur_layout.addWidget(QLabel("Kernel Size:"))
+        self.spin_bf_ksize = QSpinBox()
+        self.spin_bf_ksize.setRange(1, 31)
+        self.spin_bf_ksize.setSingleStep(2)
+        self.spin_bf_ksize.setValue(3)
+        self.spin_bf_ksize.setFixedWidth(60)
+        self.spin_bf_ksize.valueChanged.connect(self.delay_spin_update)
+        blur_layout.addWidget(self.spin_bf_ksize)
+        layout_bf.addLayout(blur_layout)
+
+        layout_bf.addSpacing(5)
         layout_bf.addWidget(QLabel("Threshold:"))
+
+        self.chk_bf_inverse = QCheckBox("Inverse Threshold")
+        self.chk_bf_inverse.setChecked(False)
+        self.chk_bf_inverse.stateChanged.connect(self.update_result)
+        layout_bf.addWidget(self.chk_bf_inverse)
 
         bf_input_layout = QHBoxLayout()
         self.slider_bf = QSlider(Qt.Horizontal)
@@ -214,7 +242,7 @@ class AOIInspector(QMainWindow):
         self.spin_bf.valueChanged.connect(self.on_spin_bf_changed)
 
         self.slider_bf.sliderReleased.connect(self.update_result)
-        self.spin_bf.editingFinished.connect(self.update_result)
+        self.spin_bf.editingFinished.connect(self.delay_spin_update)
 
         bf_input_layout.addWidget(self.slider_bf)
         bf_input_layout.addWidget(self.spin_bf)
@@ -235,6 +263,11 @@ class AOIInspector(QMainWindow):
         layout_df.addSpacing(5)
         layout_df.addWidget(QLabel("Threshold:"))
 
+        self.chk_df_inverse = QCheckBox("Inverse Threshold")
+        self.chk_df_inverse.setChecked(False)
+        self.chk_df_inverse.stateChanged.connect(self.update_result)
+        layout_df.addWidget(self.chk_df_inverse)
+
         df_input_layout = QHBoxLayout()
         self.slider_df = QSlider(Qt.Horizontal)
         self.slider_df.setRange(0, 255)
@@ -249,7 +282,7 @@ class AOIInspector(QMainWindow):
         self.spin_df.valueChanged.connect(self.on_spin_df_changed)
 
         self.slider_df.sliderReleased.connect(self.update_result)
-        self.spin_df.editingFinished.connect(self.update_result)
+        self.spin_df.editingFinished.connect(self.delay_spin_update)
 
         df_input_layout.addWidget(self.slider_df)
         df_input_layout.addWidget(self.spin_df)
@@ -271,8 +304,8 @@ class AOIInspector(QMainWindow):
         self.spin_df_iter.setValue(1)
         self.spin_df_iter.setFixedWidth(50)
 
-        self.spin_df_ksize.valueChanged.connect(self.update_result)
-        self.spin_df_iter.valueChanged.connect(self.update_result)
+        self.spin_df_ksize.valueChanged.connect(self.delay_spin_update)
+        self.spin_df_iter.valueChanged.connect(self.delay_spin_update)
 
         dilate_layout.addWidget(lbl_ksize)
         dilate_layout.addWidget(self.spin_df_ksize)
@@ -360,10 +393,14 @@ class AOIInspector(QMainWindow):
     def load_settings(self):
         self.slider_bf.setValue(self.settings.value("thresholds/bf", 200, int))
         self.slider_df.setValue(self.settings.value("thresholds/df", 10, int))
+        self.chk_bf_inverse.setChecked(self.settings.value("thresholds/bf_inverse", False, bool))
+        self.chk_df_inverse.setChecked(self.settings.value("thresholds/df_inverse", False, bool))
         self.spin_df_ksize.setValue(self.settings.value("mask/df_ksize", 3, int))
         self.spin_df_iter.setValue(self.settings.value("mask/df_iter", 1, int))
         self.chk_bf.setChecked(self.settings.value("mask/show_bf", True, bool))
         self.chk_df.setChecked(self.settings.value("mask/show_df", True, bool))
+        self.chk_bf_blur.setChecked(self.settings.value("mask/bf_blur_enabled", False, bool))
+        self.spin_bf_ksize.setValue(self.settings.value("mask/bf_blur_ksize", 3, int))
 
         self.view_state["scale"] = self.settings.value("view/scale", self.view_state["scale"], float)
         self.view_state["center_x"] = self.settings.value("view/center_x", self.view_state["center_x"], float)
@@ -372,10 +409,14 @@ class AOIInspector(QMainWindow):
     def save_settings(self):
         self.settings.setValue("thresholds/bf", self.slider_bf.value())
         self.settings.setValue("thresholds/df", self.slider_df.value())
+        self.settings.setValue("thresholds/bf_inverse", self.chk_bf_inverse.isChecked())
+        self.settings.setValue("thresholds/df_inverse", self.chk_df_inverse.isChecked())
         self.settings.setValue("mask/df_ksize", self.spin_df_ksize.value())
         self.settings.setValue("mask/df_iter", self.spin_df_iter.value())
         self.settings.setValue("mask/show_bf", self.chk_bf.isChecked())
         self.settings.setValue("mask/show_df", self.chk_df.isChecked())
+        self.settings.setValue("mask/bf_blur_enabled", self.chk_bf_blur.isChecked())
+        self.settings.setValue("mask/bf_blur_ksize", self.spin_bf_ksize.value())
         self.settings.setValue("view/scale", self.view_state.get("scale", 1.0))
         self.settings.setValue("view/center_x", self.view_state.get("center_x", 0.0))
         self.settings.setValue("view/center_y", self.view_state.get("center_y", 0.0))
@@ -530,6 +571,10 @@ class AOIInspector(QMainWindow):
         thresh_df = self.spin_df.value()
         show_bf_mask = self.chk_bf.isChecked()
         show_df_mask = self.chk_df.isChecked()
+        inverse_bf = self.chk_bf_inverse.isChecked()
+        inverse_df = self.chk_df_inverse.isChecked()
+        blur_bf = self.chk_bf_blur.isChecked()
+        blur_ksize = self.spin_bf_ksize.value()
 
         ksize = self.spin_df_ksize.value()
         iters = self.spin_df_iter.value()
@@ -539,23 +584,33 @@ class AOIInspector(QMainWindow):
 
         self.current_bf_gray = self.img_bf_original
         self.current_df_gray = self.img_df_original
+        self.current_bf_processed = None
+        self.current_df_processed = None
 
         img_bf = self.current_bf_gray
         img_df = self.current_df_gray
 
-        view_bf, mask_bf = process_bright_field(
+        bf_processed, mask_bf, view_bf = process_bright_field(
             img_bf,
             thresh_bf=thresh_bf,
             show_mask=show_bf_mask,
+            blur_enabled=blur_bf,
+            blur_ksize=blur_ksize,
+            inverse_threshold=inverse_bf,
         )
 
-        view_df, mask_df_raw, mask_df_dilated = process_dark_field(
+        self.current_bf_processed = bf_processed
+
+        df_processed, mask_df_raw, mask_df_dilated, view_df = process_dark_field(
             img_df,
             thresh_df=thresh_df,
             show_mask=show_df_mask,
             ksize=ksize,
             iters=iters,
+            inverse_threshold=inverse_df,
         )
+
+        self.current_df_processed = df_processed
 
         view_res = cv2.cvtColor(img_bf, cv2.COLOR_GRAY2BGR)
 
@@ -664,9 +719,17 @@ class AOIInspector(QMainWindow):
         src_y = int(img_y * self.coord_scale_y)
 
         if view_key == "BF":
-            gray_img = self.current_bf_gray
+            gray_img = (
+                self.current_bf_processed
+                if self.current_bf_processed is not None
+                else self.current_bf_gray
+            )
         elif view_key == "DF":
-            gray_img = self.current_df_gray
+            gray_img = (
+                self.current_df_processed
+                if self.current_df_processed is not None
+                else self.current_df_gray
+            )
         else:
             gray_img = self.current_bf_gray
 
