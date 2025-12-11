@@ -99,7 +99,7 @@ class AOIInspector(QMainWindow):
 
         self.spin_delay_timer = QTimer()
         self.spin_delay_timer.setSingleShot(True)
-        self.spin_delay_timer.setInterval(1000)
+        self.spin_delay_timer.setInterval(500)
         self.spin_delay_timer.timeout.connect(self.update_result)
 
         # Timer used to restore status text after temporary states
@@ -210,7 +210,7 @@ class AOIInspector(QMainWindow):
         self.spin_bf_ksize.setSingleStep(2)
         self.spin_bf_ksize.setValue(3)
         self.spin_bf_ksize.setFixedWidth(60)
-        self.spin_bf_ksize.valueChanged.connect(self.update_result)
+        self.spin_bf_ksize.valueChanged.connect(self.delay_spin_update)
         blur_layout.addWidget(self.spin_bf_ksize)
         layout_bf.addLayout(blur_layout)
 
@@ -231,7 +231,7 @@ class AOIInspector(QMainWindow):
         self.spin_bf.valueChanged.connect(self.on_spin_bf_changed)
 
         self.slider_bf.sliderReleased.connect(self.update_result)
-        self.spin_bf.editingFinished.connect(self.update_result)
+        self.spin_bf.editingFinished.connect(self.delay_spin_update)
 
         bf_input_layout.addWidget(self.slider_bf)
         bf_input_layout.addWidget(self.spin_bf)
@@ -266,7 +266,7 @@ class AOIInspector(QMainWindow):
         self.spin_df.valueChanged.connect(self.on_spin_df_changed)
 
         self.slider_df.sliderReleased.connect(self.update_result)
-        self.spin_df.editingFinished.connect(self.update_result)
+        self.spin_df.editingFinished.connect(self.delay_spin_update)
 
         df_input_layout.addWidget(self.slider_df)
         df_input_layout.addWidget(self.spin_df)
@@ -288,8 +288,8 @@ class AOIInspector(QMainWindow):
         self.spin_df_iter.setValue(1)
         self.spin_df_iter.setFixedWidth(50)
 
-        self.spin_df_ksize.valueChanged.connect(self.update_result)
-        self.spin_df_iter.valueChanged.connect(self.update_result)
+        self.spin_df_ksize.valueChanged.connect(self.delay_spin_update)
+        self.spin_df_iter.valueChanged.connect(self.delay_spin_update)
 
         dilate_layout.addWidget(lbl_ksize)
         dilate_layout.addWidget(self.spin_df_ksize)
