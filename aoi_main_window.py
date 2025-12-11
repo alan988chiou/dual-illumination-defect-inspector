@@ -205,12 +205,12 @@ class AOIInspector(QMainWindow):
         layout_bf.addWidget(QLabel("Blur:"))
 
         blur_layout = QHBoxLayout()
-        self.chk_bf_blur = QCheckBox("Enable Blur")
+        self.chk_bf_blur = QCheckBox("Enable")
         self.chk_bf_blur.setChecked(False)
         self.chk_bf_blur.stateChanged.connect(self.update_result)
         blur_layout.addWidget(self.chk_bf_blur)
 
-        blur_layout.addWidget(QLabel("Kernel Size:"))
+        blur_layout.addWidget(QLabel("Kernel:"))
         self.spin_bf_ksize = QSpinBox()
         self.spin_bf_ksize.setRange(1, 31)
         self.spin_bf_ksize.setSingleStep(2)
@@ -223,7 +223,7 @@ class AOIInspector(QMainWindow):
         layout_bf.addSpacing(5)
         layout_bf.addWidget(QLabel("Threshold:"))
 
-        self.chk_bf_inverse = QCheckBox("Inverse Threshold")
+        self.chk_bf_inverse = QCheckBox("Inverse")
         self.chk_bf_inverse.setChecked(False)
         self.chk_bf_inverse.stateChanged.connect(self.update_result)
         layout_bf.addWidget(self.chk_bf_inverse)
@@ -263,7 +263,7 @@ class AOIInspector(QMainWindow):
         layout_df.addSpacing(5)
         layout_df.addWidget(QLabel("Threshold:"))
 
-        self.chk_df_inverse = QCheckBox("Inverse Threshold")
+        self.chk_df_inverse = QCheckBox("Inverse")
         self.chk_df_inverse.setChecked(False)
         self.chk_df_inverse.stateChanged.connect(self.update_result)
         layout_df.addWidget(self.chk_df_inverse)
@@ -289,7 +289,7 @@ class AOIInspector(QMainWindow):
         layout_df.addLayout(df_input_layout)
 
         layout_df.addSpacing(8)
-        layout_df.addWidget(QLabel("Dilated (DF only):"))
+        layout_df.addWidget(QLabel("Dilated:"))
 
         dilate_layout = QHBoxLayout()
         lbl_ksize = QLabel("Kernel:")
