@@ -6,14 +6,14 @@ from PySide6.QtWidgets import QWidget
 
 class SyncImageViewer(QWidget):
     """
-    影像顯示視窗：
-    - 左鍵拖曳：平移
-    - 滾輪：縮放（以滑鼠位置為中心）
-    - 多個 Viewer 共用 shared_state，實現同步平移 / 縮放
-    - mouse_info 回報滑鼠對應的顯示影像座標
+    Image display widget:
+    - Left mouse drag: pan
+    - Mouse wheel: zoom (centered on cursor position)
+    - Multiple viewers share shared_state for synchronized pan/zoom
+    - mouse_info emits the mapped image coordinates for the cursor
     """
     mouse_info = Signal(str, float, float, bool)     # view_key, img_x, img_y, inside
-    transform_changed = Signal()                     # 平移/縮放變化時發出
+    transform_changed = Signal()                     # Emitted when pan/zoom changes
 
     def __init__(self, view_key, shared_state, parent=None):
         super().__init__(parent)
@@ -82,7 +82,7 @@ class SyncImageViewer(QWidget):
 
         old_scale = self.shared_state.get("scale", 1.0)
         new_scale = old_scale * factor
-        new_scale = max(0.05, min(20.0, new_scale))  # 限制縮放範圍
+        new_scale = max(0.05, min(20.0, new_scale))  # Limit zoom range
 
         if abs(new_scale - old_scale) < 1e-6:
             return
@@ -130,7 +130,7 @@ class SyncImageViewer(QWidget):
         pos = event.position()
 
         if event.buttons() & Qt.LeftButton and self.last_mouse_pos is not None:
-            # 平移
+            # Pan
             delta = pos - self.last_mouse_pos
             self.last_mouse_pos = pos
 
@@ -143,7 +143,7 @@ class SyncImageViewer(QWidget):
 
             self.transform_changed.emit()
 
-        # 回報滑鼠位置
+        # Report cursor position
         img_x, img_y = self._widget_pos_to_image_pos(pos)
         pm_w = self.pixmap.width()
         pm_h = self.pixmap.height()
