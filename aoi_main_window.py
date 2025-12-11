@@ -198,6 +198,23 @@ class AOIInspector(QMainWindow):
         layout_bf.addWidget(self.chk_bf)
 
         layout_bf.addSpacing(5)
+        self.chk_bf_blur = QCheckBox("Enable Blur")
+        self.chk_bf_blur.setChecked(False)
+        self.chk_bf_blur.stateChanged.connect(self.update_result)
+        layout_bf.addWidget(self.chk_bf_blur)
+
+        blur_layout = QHBoxLayout()
+        blur_layout.addWidget(QLabel("Kernel Size:"))
+        self.spin_bf_ksize = QSpinBox()
+        self.spin_bf_ksize.setRange(1, 31)
+        self.spin_bf_ksize.setSingleStep(2)
+        self.spin_bf_ksize.setValue(3)
+        self.spin_bf_ksize.setFixedWidth(60)
+        self.spin_bf_ksize.valueChanged.connect(self.update_result)
+        blur_layout.addWidget(self.spin_bf_ksize)
+        layout_bf.addLayout(blur_layout)
+
+        layout_bf.addSpacing(5)
         layout_bf.addWidget(QLabel("Threshold:"))
 
         bf_input_layout = QHBoxLayout()
@@ -364,6 +381,8 @@ class AOIInspector(QMainWindow):
         self.spin_df_iter.setValue(self.settings.value("mask/df_iter", 1, int))
         self.chk_bf.setChecked(self.settings.value("mask/show_bf", True, bool))
         self.chk_df.setChecked(self.settings.value("mask/show_df", True, bool))
+        self.chk_bf_blur.setChecked(self.settings.value("mask/bf_blur_enabled", False, bool))
+        self.spin_bf_ksize.setValue(self.settings.value("mask/bf_blur_ksize", 3, int))
 
         self.view_state["scale"] = self.settings.value("view/scale", self.view_state["scale"], float)
         self.view_state["center_x"] = self.settings.value("view/center_x", self.view_state["center_x"], float)
@@ -376,6 +395,8 @@ class AOIInspector(QMainWindow):
         self.settings.setValue("mask/df_iter", self.spin_df_iter.value())
         self.settings.setValue("mask/show_bf", self.chk_bf.isChecked())
         self.settings.setValue("mask/show_df", self.chk_df.isChecked())
+        self.settings.setValue("mask/bf_blur_enabled", self.chk_bf_blur.isChecked())
+        self.settings.setValue("mask/bf_blur_ksize", self.spin_bf_ksize.value())
         self.settings.setValue("view/scale", self.view_state.get("scale", 1.0))
         self.settings.setValue("view/center_x", self.view_state.get("center_x", 0.0))
         self.settings.setValue("view/center_y", self.view_state.get("center_y", 0.0))
@@ -530,6 +551,8 @@ class AOIInspector(QMainWindow):
         thresh_df = self.spin_df.value()
         show_bf_mask = self.chk_bf.isChecked()
         show_df_mask = self.chk_df.isChecked()
+        blur_bf = self.chk_bf_blur.isChecked()
+        blur_ksize = self.spin_bf_ksize.value()
 
         ksize = self.spin_df_ksize.value()
         iters = self.spin_df_iter.value()
@@ -547,6 +570,8 @@ class AOIInspector(QMainWindow):
             img_bf,
             thresh_bf=thresh_bf,
             show_mask=show_bf_mask,
+            blur_enabled=blur_bf,
+            blur_ksize=blur_ksize,
         )
 
         view_df, mask_df_raw, mask_df_dilated = process_dark_field(
