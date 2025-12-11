@@ -687,7 +687,7 @@ class AOIInspector(QMainWindow):
     # ---------- Save images ----------
 
     def ensure_result_dir(self):
-        result_dir = os.path.join(os.getcwd(), "Result")
+        result_dir = os.path.join(os.getcwd(), "results")
         if not os.path.exists(result_dir):
             os.makedirs(result_dir, exist_ok=True)
         return result_dir
