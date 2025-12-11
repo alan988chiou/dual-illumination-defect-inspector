@@ -116,7 +116,7 @@ class AOIInspector(QMainWindow):
         self.viewer_bf = create_image_viewer("Bright Field (BF)", "BF")
         self.viewer_df = create_image_viewer("Dark Field (DF)", "DF")
         self.viewer_res = create_image_viewer(
-            "Result (Red:Defect, Green:DF-Only, Yellow:Both)", "RES"
+            "Result (Red:Defect, Green:Particle, Yellow:Overlap)", "RES"
         )
 
         main_layout.addWidget(self.image_container, 1)
