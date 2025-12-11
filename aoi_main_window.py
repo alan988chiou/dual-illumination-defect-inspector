@@ -65,6 +65,10 @@ class AOIInspector(QMainWindow):
         self.current_bf_gray = None
         self.current_df_gray = None
 
+        # Grayscale images after preprocessing but before binarization
+        self.current_bf_processed = None
+        self.current_df_processed = None
+
         # Pixmaps used by viewers
         self.pixmap_bf = None
         self.pixmap_df = None
@@ -562,11 +566,13 @@ class AOIInspector(QMainWindow):
 
         self.current_bf_gray = self.img_bf_original
         self.current_df_gray = self.img_df_original
+        self.current_bf_processed = None
+        self.current_df_processed = None
 
         img_bf = self.current_bf_gray
         img_df = self.current_df_gray
 
-        view_bf, mask_bf = process_bright_field(
+        bf_processed, mask_bf, view_bf = process_bright_field(
             img_bf,
             thresh_bf=thresh_bf,
             show_mask=show_bf_mask,
@@ -574,13 +580,17 @@ class AOIInspector(QMainWindow):
             blur_ksize=blur_ksize,
         )
 
-        view_df, mask_df_raw, mask_df_dilated = process_dark_field(
+        self.current_bf_processed = bf_processed
+
+        df_processed, mask_df_raw, mask_df_dilated, view_df = process_dark_field(
             img_df,
             thresh_df=thresh_df,
             show_mask=show_df_mask,
             ksize=ksize,
             iters=iters,
         )
+
+        self.current_df_processed = df_processed
 
         view_res = cv2.cvtColor(img_bf, cv2.COLOR_GRAY2BGR)
 
@@ -689,9 +699,17 @@ class AOIInspector(QMainWindow):
         src_y = int(img_y * self.coord_scale_y)
 
         if view_key == "BF":
-            gray_img = self.current_bf_gray
+            gray_img = (
+                self.current_bf_processed
+                if self.current_bf_processed is not None
+                else self.current_bf_gray
+            )
         elif view_key == "DF":
-            gray_img = self.current_df_gray
+            gray_img = (
+                self.current_df_processed
+                if self.current_df_processed is not None
+                else self.current_df_gray
+            )
         else:
             gray_img = self.current_bf_gray
 

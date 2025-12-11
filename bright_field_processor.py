@@ -14,11 +14,12 @@ def process_bright_field(
     Bright field image processing:
     - Input: grayscale BF image, threshold, whether to show mask
     - Output:
-        view_bf_bgr: BGR image for the BF viewer
+        bf_for_process: grayscale image after preprocessing (e.g., blur)
         mask_bf: binary mask for defects and dust (0/255)
+        view_bf_bgr: BGR image for the BF viewer
     """
     if img_bf_gray is None:
-        return None, None
+        return None, None, None
 
     bf_for_process = img_bf_gray
     if blur_enabled and blur_ksize > 1:
@@ -34,4 +35,4 @@ def process_bright_field(
         # Mark BF mask in red
         view_bf_bgr[mask_bf == 255] = [0, 0, 255]
 
-    return view_bf_bgr, mask_bf
+    return bf_for_process, mask_bf, view_bf_bgr
