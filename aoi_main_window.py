@@ -202,23 +202,34 @@ class AOIInspector(QMainWindow):
         layout_bf.addWidget(self.chk_bf)
 
         layout_bf.addSpacing(5)
-        layout_bf.addWidget(QLabel("Blur:"))
 
-        blur_layout = QHBoxLayout()
+        blur_row_layout = QHBoxLayout()
+
+        blur_enable_layout = QHBoxLayout()
+        blur_enable_layout.addWidget(QLabel("Blur:"))
         self.chk_bf_blur = QCheckBox("Enable")
         self.chk_bf_blur.setChecked(False)
         self.chk_bf_blur.stateChanged.connect(self.update_result)
-        blur_layout.addWidget(self.chk_bf_blur)
+        blur_enable_layout.addWidget(self.chk_bf_blur)
+        blur_enable_layout.addStretch()
 
-        blur_layout.addWidget(QLabel("Kernel:"))
+        blur_kernel_layout = QHBoxLayout()
+        blur_kernel_layout.addWidget(QLabel("Kernel:"))
         self.spin_bf_ksize = QSpinBox()
         self.spin_bf_ksize.setRange(1, 31)
         self.spin_bf_ksize.setSingleStep(2)
         self.spin_bf_ksize.setValue(3)
         self.spin_bf_ksize.setFixedWidth(60)
         self.spin_bf_ksize.valueChanged.connect(self.delay_spin_update)
-        blur_layout.addWidget(self.spin_bf_ksize)
-        layout_bf.addLayout(blur_layout)
+        blur_kernel_layout.addWidget(self.spin_bf_ksize)
+        blur_kernel_layout.addStretch()
+
+        blur_row_layout.addLayout(blur_enable_layout)
+        blur_row_layout.addLayout(blur_kernel_layout)
+        blur_row_layout.setStretch(0, 1)
+        blur_row_layout.setStretch(1, 1)
+
+        layout_bf.addLayout(blur_row_layout)
 
         layout_bf.addSpacing(5)
         layout_bf.addWidget(QLabel("Threshold:"))
