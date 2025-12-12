@@ -202,11 +202,11 @@ class AOIInspector(QMainWindow):
         layout_bf.addWidget(self.chk_bf)
 
         layout_bf.addSpacing(5)
+        layout_bf.addWidget(QLabel("Blur:"))
 
         blur_row_layout = QHBoxLayout()
 
         blur_enable_layout = QHBoxLayout()
-        blur_enable_layout.addWidget(QLabel("Blur:"))
         self.chk_bf_blur = QCheckBox("Enable")
         self.chk_bf_blur.setChecked(False)
         self.chk_bf_blur.stateChanged.connect(self.update_result)
