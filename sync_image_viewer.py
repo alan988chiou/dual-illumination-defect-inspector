@@ -180,7 +180,7 @@ class SyncImageViewer(QWidget):
         self.transform_changed.emit()
 
     def mousePressEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.RightButton:
             img_x, img_y = self._widget_pos_to_image_pos(event.position())
             rect = self._get_roi_rect()
             handle_idx = self._hit_test_roi_handle(img_x, img_y)
@@ -198,6 +198,7 @@ class SyncImageViewer(QWidget):
                 self.setCursor(Qt.SizeAllCursor)
                 event.accept()
                 return
+        if event.button() == Qt.LeftButton:
             self.last_mouse_pos = event.position()
             self.setCursor(Qt.ClosedHandCursor)
             event.accept()
@@ -205,7 +206,7 @@ class SyncImageViewer(QWidget):
             super().mousePressEvent(event)
 
     def mouseReleaseEvent(self, event):
-        if event.button() == Qt.LeftButton:
+        if event.button() == Qt.RightButton:
             if self._roi_action is not None:
                 self._roi_action = None
                 self._roi_start_pos = None
@@ -213,6 +214,7 @@ class SyncImageViewer(QWidget):
                 self.setCursor(Qt.ArrowCursor)
                 event.accept()
                 return
+        if event.button() == Qt.LeftButton:
             self.last_mouse_pos = None
             self.setCursor(Qt.ArrowCursor)
             event.accept()
@@ -225,7 +227,7 @@ class SyncImageViewer(QWidget):
 
         pos = event.position()
 
-        if event.buttons() & Qt.LeftButton and self._roi_action is not None:
+        if event.buttons() & Qt.RightButton and self._roi_action is not None:
             img_x, img_y = self._widget_pos_to_image_pos(pos)
             rect = self._roi_start_rect
             if rect:

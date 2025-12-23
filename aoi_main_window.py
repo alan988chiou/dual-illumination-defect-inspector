@@ -195,15 +195,10 @@ class AOIInspector(QMainWindow):
         self.btn_save_result.clicked.connect(self.save_result)
         layout_op.addWidget(self.btn_save_result)
 
-        self.btn_add_roi = QPushButton("Add ROI")
-        self.btn_add_roi.setMinimumHeight(40)
-        self.btn_add_roi.clicked.connect(self.add_roi)
-        layout_op.addWidget(self.btn_add_roi)
-
-        self.btn_remove_roi = QPushButton("Remove ROI")
-        self.btn_remove_roi.setMinimumHeight(40)
-        self.btn_remove_roi.clicked.connect(self.remove_roi)
-        layout_op.addWidget(self.btn_remove_roi)
+        self.btn_roi_toggle = QPushButton("Add ROI")
+        self.btn_roi_toggle.setMinimumHeight(40)
+        self.btn_roi_toggle.clicked.connect(self.toggle_roi)
+        layout_op.addWidget(self.btn_roi_toggle)
 
         group_op.setLayout(layout_op)
         control_layout.addWidget(group_op)
@@ -373,8 +368,7 @@ class AOIInspector(QMainWindow):
             self.btn_load.setEnabled(False)
             self.btn_save_bfdf.setEnabled(False)
             self.btn_save_result.setEnabled(False)
-            self.btn_add_roi.setEnabled(False)
-            self.btn_remove_roi.setEnabled(False)
+            self.btn_roi_toggle.setEnabled(False)
             return
 
         # Info status: Load is always enabled
@@ -391,8 +385,8 @@ class AOIInspector(QMainWindow):
             and self.last_view_res_bgr is not None
         )
         self.btn_save_result.setEnabled(has_result_view)
-        self.btn_add_roi.setEnabled(has_img)
-        self.btn_remove_roi.setEnabled(has_img and self.roi_state.get("enabled"))
+        self.btn_roi_toggle.setEnabled(has_img)
+        self.btn_roi_toggle.setText("Remove ROI" if self.roi_state.get("enabled") else "Add ROI")
 
     def set_status_info(self, text="Ready"):
         self.status_label.setText(text)
@@ -775,6 +769,12 @@ class AOIInspector(QMainWindow):
         self.roi_state["rect"] = None
         self.update_buttons_state(info_state=True)
         self.update_result()
+
+    def toggle_roi(self):
+        if self.roi_state.get("enabled"):
+            self.remove_roi()
+        else:
+            self.add_roi()
 
     @Slot()
     def on_roi_changed(self):
