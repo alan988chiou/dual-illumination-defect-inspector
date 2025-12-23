@@ -97,6 +97,10 @@ class AOIInspector(QMainWindow):
             "center_x": 0.0,
             "center_y": 0.0,
         }
+        self.roi_state = {
+            "enabled": False,
+            "rect": None,
+        }
 
         self._bf_from_slider = False
         self._df_from_slider = False
@@ -139,9 +143,11 @@ class AOIInspector(QMainWindow):
             viewer = SyncImageViewer(view_key, self.view_state, parent=self)
             viewer.setStyleSheet(BACKGROUND_COLOR_CSS)
             viewer.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored)
+            viewer.set_roi_state(self.roi_state)
 
             viewer.mouse_info.connect(self.on_mouse_info)
             viewer.transform_changed.connect(self.on_transform_changed)
+            viewer.roi_changed.connect(self.on_roi_changed)
 
             self.image_layout.addWidget(viewer)
             return viewer
@@ -188,6 +194,16 @@ class AOIInspector(QMainWindow):
         self.btn_save_result.setMinimumHeight(40)
         self.btn_save_result.clicked.connect(self.save_result)
         layout_op.addWidget(self.btn_save_result)
+
+        self.btn_add_roi = QPushButton("Add ROI")
+        self.btn_add_roi.setMinimumHeight(40)
+        self.btn_add_roi.clicked.connect(self.add_roi)
+        layout_op.addWidget(self.btn_add_roi)
+
+        self.btn_remove_roi = QPushButton("Remove ROI")
+        self.btn_remove_roi.setMinimumHeight(40)
+        self.btn_remove_roi.clicked.connect(self.remove_roi)
+        layout_op.addWidget(self.btn_remove_roi)
 
         group_op.setLayout(layout_op)
         control_layout.addWidget(group_op)
@@ -357,6 +373,8 @@ class AOIInspector(QMainWindow):
             self.btn_load.setEnabled(False)
             self.btn_save_bfdf.setEnabled(False)
             self.btn_save_result.setEnabled(False)
+            self.btn_add_roi.setEnabled(False)
+            self.btn_remove_roi.setEnabled(False)
             return
 
         # Info status: Load is always enabled
@@ -373,6 +391,8 @@ class AOIInspector(QMainWindow):
             and self.last_view_res_bgr is not None
         )
         self.btn_save_result.setEnabled(has_result_view)
+        self.btn_add_roi.setEnabled(has_img)
+        self.btn_remove_roi.setEnabled(has_img and self.roi_state.get("enabled"))
 
     def set_status_info(self, text="Ready"):
         self.status_label.setText(text)
@@ -609,6 +629,79 @@ class AOIInspector(QMainWindow):
         img_bf = self.current_bf_gray
         img_df = self.current_df_gray
 
+        roi_rect = None
+        if self.roi_state.get("enabled") and self.roi_state.get("rect"):
+            x, y, w, h = self.roi_state["rect"]
+            img_h, img_w = img_bf.shape
+            x = max(0, min(int(x), img_w - 1))
+            y = max(0, min(int(y), img_h - 1))
+            w = max(1, min(int(w), img_w - x))
+            h = max(1, min(int(h), img_h - y))
+            roi_rect = (x, y, w, h)
+
+        if roi_rect:
+            x, y, w, h = roi_rect
+            img_bf_roi = img_bf[y:y + h, x:x + w]
+            img_df_roi = img_df[y:y + h, x:x + w]
+
+            bf_processed, mask_bf, view_bf_roi = process_bright_field(
+                img_bf_roi,
+                thresh_bf=thresh_bf,
+                show_mask=show_bf_mask,
+                blur_enabled=blur_bf,
+                blur_ksize=blur_ksize,
+                inverse_threshold=inverse_bf,
+            )
+
+            df_processed, mask_df_raw, mask_df_dilated, view_df_roi = process_dark_field(
+                img_df_roi,
+                thresh_df=thresh_df,
+                show_mask=show_df_mask,
+                ksize=ksize,
+                iters=iters,
+                inverse_threshold=inverse_df,
+            )
+
+            self.current_bf_processed = img_bf.copy()
+            if bf_processed is not None:
+                self.current_bf_processed[y:y + h, x:x + w] = bf_processed
+
+            self.current_df_processed = img_df.copy()
+            if df_processed is not None:
+                self.current_df_processed[y:y + h, x:x + w] = df_processed
+
+            view_bf = cv2.cvtColor(img_bf, cv2.COLOR_GRAY2BGR)
+            view_df = cv2.cvtColor(img_df, cv2.COLOR_GRAY2BGR)
+
+            if view_bf_roi is not None:
+                view_bf[y:y + h, x:x + w] = view_bf_roi
+            if view_df_roi is not None:
+                view_df[y:y + h, x:x + w] = view_df_roi
+
+            view_res = cv2.cvtColor(img_bf, cv2.COLOR_GRAY2BGR)
+            if mask_bf is None or mask_df_dilated is None:
+                self.update_display_pixmaps(view_bf, view_df, view_res)
+                self.set_status_info()
+                return
+
+            view_res_roi = view_res[y:y + h, x:x + w]
+            if show_bf_mask and show_df_mask:
+                mask_defect = cv2.bitwise_and(mask_bf, cv2.bitwise_not(mask_df_dilated))
+                mask_common = cv2.bitwise_and(mask_bf, mask_df_dilated)
+                mask_df_only = cv2.bitwise_and(mask_df_dilated, cv2.bitwise_not(mask_bf))
+
+                view_res_roi[mask_defect == 255] = [0, 0, 255]
+                view_res_roi[mask_df_only == 255] = [0, 255, 0]
+                view_res_roi[mask_common == 255] = [0, 255, 255]
+            elif show_bf_mask and not show_df_mask:
+                view_res_roi[mask_bf == 255] = [0, 0, 255]
+            elif not show_bf_mask and show_df_mask:
+                view_res_roi[mask_df_dilated == 255] = [0, 255, 0]
+
+            self.update_display_pixmaps(view_bf, view_df, view_res)
+            self.set_status_info()
+            return
+
         bf_processed, mask_bf, view_bf = process_bright_field(
             img_bf,
             thresh_bf=thresh_bf,
@@ -662,6 +755,30 @@ class AOIInspector(QMainWindow):
             self.set_status_info()
             return
         self.perform_calculation()
+
+    def add_roi(self):
+        if self.img_bf_original is None:
+            self.set_status_error("No image")
+            return
+        h, w = self.img_bf_original.shape
+        roi_w = max(int(w * 0.5), 10)
+        roi_h = max(int(h * 0.5), 10)
+        roi_x = int((w - roi_w) / 2)
+        roi_y = int((h - roi_h) / 2)
+        self.roi_state["enabled"] = True
+        self.roi_state["rect"] = (roi_x, roi_y, roi_w, roi_h)
+        self.update_buttons_state(info_state=True)
+        self.update_result()
+
+    def remove_roi(self):
+        self.roi_state["enabled"] = False
+        self.roi_state["rect"] = None
+        self.update_buttons_state(info_state=True)
+        self.update_result()
+
+    @Slot()
+    def on_roi_changed(self):
+        self.delay_spin_update()
 
     # ---------- Display / synchronized zoom ----------
 
