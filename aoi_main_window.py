@@ -49,7 +49,7 @@ def save_image_unicode(path: str, image: np.ndarray) -> bool:
 class AOIInspector(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Dual Illumination Defect Inspector")
+        self.setWindowTitle("Dual-Illumination Defect Inspector")
         self.resize(1200, 850)
 
         self.settings = QSettings("DualIllumination", "AOIInspector")
