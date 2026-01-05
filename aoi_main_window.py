@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QPushButton, QLabel, QSlider, QSpinBox,
     QCheckBox, QFrame, QSizePolicy, QGroupBox,
-    QDialog, QMessageBox
+    QDialog, QMessageBox, QComboBox, QStackedWidget, QDoubleSpinBox
 )
 
 from PySide6.QtCore import Qt, Slot, QTimer, QSettings
@@ -213,44 +213,50 @@ class AOIInspector(QMainWindow):
         layout_bf.addWidget(self.chk_bf)
 
         layout_bf.addSpacing(5)
-        layout_bf.addWidget(QLabel("Blur:"))
+
+        method_row_layout = QHBoxLayout()
+        method_row_layout.addWidget(QLabel("Method:"))
+        self.combo_bf_method = QComboBox()
+        self.combo_bf_method.addItems(["Blur + Threshold", "DoG Highpass"])
+        self.combo_bf_method.currentIndexChanged.connect(self.on_bf_method_changed)
+        method_row_layout.addWidget(self.combo_bf_method)
+        layout_bf.addLayout(method_row_layout)
+
+        self.stack_bf_method = QStackedWidget()
+
+        # Method 1: Blur + Threshold
+        method1_widget = QWidget()
+        method1_layout = QVBoxLayout(method1_widget)
+
+        method1_layout.addWidget(QLabel("Blur (Enable / Kernel):"))
 
         blur_row_layout = QHBoxLayout()
-
-        blur_enable_layout = QHBoxLayout()
         self.chk_bf_blur = QCheckBox("Enable")
         self.chk_bf_blur.setChecked(False)
         self.chk_bf_blur.stateChanged.connect(self.update_result)
-        blur_enable_layout.addWidget(self.chk_bf_blur)
-        blur_enable_layout.addStretch()
+        blur_row_layout.addWidget(self.chk_bf_blur)
 
-        blur_kernel_layout = QHBoxLayout()
-        blur_kernel_layout.addWidget(QLabel("Kernel:"))
+        blur_row_layout.addWidget(QLabel("Kernel:"))
         self.spin_bf_ksize = QSpinBox()
         self.spin_bf_ksize.setRange(1, 31)
         self.spin_bf_ksize.setSingleStep(2)
         self.spin_bf_ksize.setValue(3)
         self.spin_bf_ksize.setFixedWidth(60)
         self.spin_bf_ksize.valueChanged.connect(self.delay_spin_update)
-        blur_kernel_layout.addWidget(self.spin_bf_ksize)
-        blur_kernel_layout.addStretch()
+        blur_row_layout.addWidget(self.spin_bf_ksize)
+        blur_row_layout.addStretch()
 
-        blur_row_layout.addLayout(blur_enable_layout)
-        blur_row_layout.addLayout(blur_kernel_layout)
-        blur_row_layout.setStretch(0, 1)
-        blur_row_layout.setStretch(1, 1)
+        method1_layout.addLayout(blur_row_layout)
 
-        layout_bf.addLayout(blur_row_layout)
+        method1_layout.addSpacing(5)
+        method1_layout.addWidget(QLabel("Threshold (Inverse / Value):"))
 
-        layout_bf.addSpacing(5)
-        layout_bf.addWidget(QLabel("Threshold:"))
-
+        bf_input_layout = QHBoxLayout()
         self.chk_bf_inverse = QCheckBox("Inverse")
         self.chk_bf_inverse.setChecked(False)
         self.chk_bf_inverse.stateChanged.connect(self.update_result)
-        layout_bf.addWidget(self.chk_bf_inverse)
+        bf_input_layout.addWidget(self.chk_bf_inverse)
 
-        bf_input_layout = QHBoxLayout()
         self.slider_bf = QSlider(Qt.Horizontal)
         self.slider_bf.setRange(0, 255)
         self.slider_bf.setValue(200)
@@ -268,7 +274,62 @@ class AOIInspector(QMainWindow):
 
         bf_input_layout.addWidget(self.slider_bf)
         bf_input_layout.addWidget(self.spin_bf)
-        layout_bf.addLayout(bf_input_layout)
+        method1_layout.addLayout(bf_input_layout)
+
+        self.stack_bf_method.addWidget(method1_widget)
+
+        # Method 2: DoG Highpass
+        method2_widget = QWidget()
+        method2_layout = QVBoxLayout(method2_widget)
+
+        method2_layout.addWidget(QLabel("DoG (sigma1, sigma2):"))
+        dog1_layout = QHBoxLayout()
+        self.spin_bf_dog_sigma1 = QDoubleSpinBox()
+        self.spin_bf_dog_sigma1.setRange(0.1, 20.0)
+        self.spin_bf_dog_sigma1.setSingleStep(0.1)
+        self.spin_bf_dog_sigma1.setValue(0.8)
+        self.spin_bf_dog_sigma1.valueChanged.connect(self.delay_spin_update)
+
+        self.spin_bf_dog_sigma2 = QDoubleSpinBox()
+        self.spin_bf_dog_sigma2.setRange(0.1, 20.0)
+        self.spin_bf_dog_sigma2.setSingleStep(0.1)
+        self.spin_bf_dog_sigma2.setValue(2.4)
+        self.spin_bf_dog_sigma2.valueChanged.connect(self.delay_spin_update)
+
+        dog1_layout.addWidget(self.spin_bf_dog_sigma1)
+        dog1_layout.addWidget(self.spin_bf_dog_sigma2)
+        method2_layout.addLayout(dog1_layout)
+
+        method2_layout.addWidget(QLabel("MAD Threshold k / Min:"))
+        dog_thr_layout = QHBoxLayout()
+        self.spin_bf_dog_k = QDoubleSpinBox()
+        self.spin_bf_dog_k.setRange(0.1, 10.0)
+        self.spin_bf_dog_k.setSingleStep(0.1)
+        self.spin_bf_dog_k.setValue(1.0)
+        self.spin_bf_dog_k.valueChanged.connect(self.delay_spin_update)
+
+        self.spin_bf_dog_min_thr = QSpinBox()
+        self.spin_bf_dog_min_thr.setRange(0, 255)
+        self.spin_bf_dog_min_thr.setValue(5)
+        self.spin_bf_dog_min_thr.setFixedWidth(70)
+        self.spin_bf_dog_min_thr.valueChanged.connect(self.delay_spin_update)
+
+        dog_thr_layout.addWidget(QLabel("k:"))
+        dog_thr_layout.addWidget(self.spin_bf_dog_k)
+        dog_thr_layout.addWidget(QLabel("Min:"))
+        dog_thr_layout.addWidget(self.spin_bf_dog_min_thr)
+        dog_thr_layout.addStretch()
+        method2_layout.addLayout(dog_thr_layout)
+
+        method2_layout.addWidget(QLabel("Threshold Polarity:"))
+        self.chk_bf_inverse_dog = QCheckBox("Inverse")
+        self.chk_bf_inverse_dog.setChecked(False)
+        self.chk_bf_inverse_dog.stateChanged.connect(self.update_result)
+        method2_layout.addWidget(self.chk_bf_inverse_dog)
+
+        self.stack_bf_method.addWidget(method2_widget)
+
+        layout_bf.addWidget(self.stack_bf_method)
 
         group_bf.setLayout(layout_bf)
         control_layout.addWidget(group_bf)
@@ -428,12 +489,20 @@ class AOIInspector(QMainWindow):
         self.slider_df.setValue(self.settings.value("thresholds/df", 10, int))
         self.chk_bf_inverse.setChecked(self.settings.value("thresholds/bf_inverse", False, bool))
         self.chk_df_inverse.setChecked(self.settings.value("thresholds/df_inverse", False, bool))
+        self.chk_bf_inverse_dog.setChecked(self.settings.value("thresholds/bf_inverse_dog", False, bool))
         self.spin_df_ksize.setValue(self.settings.value("mask/df_ksize", 3, int))
         self.spin_df_iter.setValue(self.settings.value("mask/df_iter", 1, int))
         self.chk_bf.setChecked(self.settings.value("mask/show_bf", True, bool))
         self.chk_df.setChecked(self.settings.value("mask/show_df", True, bool))
         self.chk_bf_blur.setChecked(self.settings.value("mask/bf_blur_enabled", False, bool))
         self.spin_bf_ksize.setValue(self.settings.value("mask/bf_blur_ksize", 3, int))
+        self.combo_bf_method.setCurrentIndex(self.settings.value("bf/method", 0, int))
+        self.spin_bf_dog_sigma1.setValue(self.settings.value("bf/dog_sigma1", 0.8, float))
+        self.spin_bf_dog_sigma2.setValue(self.settings.value("bf/dog_sigma2", 2.4, float))
+        self.spin_bf_dog_k.setValue(self.settings.value("bf/dog_k", 1.0, float))
+        self.spin_bf_dog_min_thr.setValue(self.settings.value("bf/dog_min_thr", 5, int))
+
+        self.stack_bf_method.setCurrentIndex(self.combo_bf_method.currentIndex())
 
         self.view_state["scale"] = self.settings.value("view/scale", self.view_state["scale"], float)
         self.view_state["center_x"] = self.settings.value("view/center_x", self.view_state["center_x"], float)
@@ -444,12 +513,18 @@ class AOIInspector(QMainWindow):
         self.settings.setValue("thresholds/df", self.slider_df.value())
         self.settings.setValue("thresholds/bf_inverse", self.chk_bf_inverse.isChecked())
         self.settings.setValue("thresholds/df_inverse", self.chk_df_inverse.isChecked())
+        self.settings.setValue("thresholds/bf_inverse_dog", self.chk_bf_inverse_dog.isChecked())
         self.settings.setValue("mask/df_ksize", self.spin_df_ksize.value())
         self.settings.setValue("mask/df_iter", self.spin_df_iter.value())
         self.settings.setValue("mask/show_bf", self.chk_bf.isChecked())
         self.settings.setValue("mask/show_df", self.chk_df.isChecked())
         self.settings.setValue("mask/bf_blur_enabled", self.chk_bf_blur.isChecked())
         self.settings.setValue("mask/bf_blur_ksize", self.spin_bf_ksize.value())
+        self.settings.setValue("bf/method", self.combo_bf_method.currentIndex())
+        self.settings.setValue("bf/dog_sigma1", self.spin_bf_dog_sigma1.value())
+        self.settings.setValue("bf/dog_sigma2", self.spin_bf_dog_sigma2.value())
+        self.settings.setValue("bf/dog_k", self.spin_bf_dog_k.value())
+        self.settings.setValue("bf/dog_min_thr", self.spin_bf_dog_min_thr.value())
         self.settings.setValue("view/scale", self.view_state.get("scale", 1.0))
         self.settings.setValue("view/center_x", self.view_state.get("center_x", 0.0))
         self.settings.setValue("view/center_y", self.view_state.get("center_y", 0.0))
@@ -459,6 +534,11 @@ class AOIInspector(QMainWindow):
         super().closeEvent(event)
 
     # ---------- Slider / SpinBox ----------
+
+    @Slot(int)
+    def on_bf_method_changed(self, index):
+        self.stack_bf_method.setCurrentIndex(index)
+        self.update_result()
 
     @Slot(int)
     def on_slider_bf_changed(self, v):
@@ -604,10 +684,23 @@ class AOIInspector(QMainWindow):
         thresh_df = self.spin_df.value()
         show_bf_mask = self.chk_bf.isChecked()
         show_df_mask = self.chk_df.isChecked()
-        inverse_bf = self.chk_bf_inverse.isChecked()
+        method_idx = self.combo_bf_method.currentIndex()
+        bf_method = "dog_highpass" if method_idx == 1 else "blur_threshold"
+        inverse_bf = (
+            self.chk_bf_inverse_dog.isChecked()
+            if bf_method == "dog_highpass"
+            else self.chk_bf_inverse.isChecked()
+        )
         inverse_df = self.chk_df_inverse.isChecked()
         blur_bf = self.chk_bf_blur.isChecked()
         blur_ksize = self.spin_bf_ksize.value()
+
+        dog_params = {
+            "sigma1": self.spin_bf_dog_sigma1.value(),
+            "sigma2": self.spin_bf_dog_sigma2.value(),
+            "k": self.spin_bf_dog_k.value(),
+            "min_thr": self.spin_bf_dog_min_thr.value(),
+        }
 
         ksize = self.spin_df_ksize.value()
         iters = self.spin_df_iter.value()
@@ -645,6 +738,8 @@ class AOIInspector(QMainWindow):
                 blur_enabled=blur_bf,
                 blur_ksize=blur_ksize,
                 inverse_threshold=inverse_bf,
+                method=bf_method,
+                dog_params=dog_params,
             )
 
             df_processed, mask_df_raw, mask_df_dilated, view_df_roi = process_dark_field(
@@ -703,6 +798,8 @@ class AOIInspector(QMainWindow):
             blur_enabled=blur_bf,
             blur_ksize=blur_ksize,
             inverse_threshold=inverse_bf,
+            method=bf_method,
+            dog_params=dog_params,
         )
 
         self.current_bf_processed = bf_processed
