@@ -287,11 +287,11 @@ class AOIInspector(QMainWindow):
 
         self.stack_bf_method.addWidget(method1_widget)
 
-        # Method 2: DoG Highpass twice
+        # Method 2: DoG Highpass
         method2_widget = QWidget()
         method2_layout = QVBoxLayout(method2_widget)
 
-        method2_layout.addWidget(QLabel("DoG Stage 1 (sigma1, sigma2):"))
+        method2_layout.addWidget(QLabel("DoG (sigma1, sigma2):"))
         dog1_layout = QHBoxLayout()
         self.spin_bf_dog_sigma1 = QDoubleSpinBox()
         self.spin_bf_dog_sigma1.setRange(0.1, 20.0)
@@ -308,24 +308,6 @@ class AOIInspector(QMainWindow):
         dog1_layout.addWidget(self.spin_bf_dog_sigma1)
         dog1_layout.addWidget(self.spin_bf_dog_sigma2)
         method2_layout.addLayout(dog1_layout)
-
-        method2_layout.addWidget(QLabel("DoG Stage 2 (sigma1, sigma2):"))
-        dog2_layout = QHBoxLayout()
-        self.spin_bf_dog2_sigma1 = QDoubleSpinBox()
-        self.spin_bf_dog2_sigma1.setRange(0.1, 20.0)
-        self.spin_bf_dog2_sigma1.setSingleStep(0.1)
-        self.spin_bf_dog2_sigma1.setValue(0.8)
-        self.spin_bf_dog2_sigma1.valueChanged.connect(self.delay_spin_update)
-
-        self.spin_bf_dog2_sigma2 = QDoubleSpinBox()
-        self.spin_bf_dog2_sigma2.setRange(0.1, 20.0)
-        self.spin_bf_dog2_sigma2.setSingleStep(0.1)
-        self.spin_bf_dog2_sigma2.setValue(2.4)
-        self.spin_bf_dog2_sigma2.valueChanged.connect(self.delay_spin_update)
-
-        dog2_layout.addWidget(self.spin_bf_dog2_sigma1)
-        dog2_layout.addWidget(self.spin_bf_dog2_sigma2)
-        method2_layout.addLayout(dog2_layout)
 
         method2_layout.addWidget(QLabel("MAD Threshold k / Min:"))
         dog_thr_layout = QHBoxLayout()
@@ -526,8 +508,6 @@ class AOIInspector(QMainWindow):
         self.combo_bf_method.setCurrentIndex(self.settings.value("bf/method", 0, int))
         self.spin_bf_dog_sigma1.setValue(self.settings.value("bf/dog_sigma1", 0.8, float))
         self.spin_bf_dog_sigma2.setValue(self.settings.value("bf/dog_sigma2", 2.4, float))
-        self.spin_bf_dog2_sigma1.setValue(self.settings.value("bf/dog2_sigma1", 0.8, float))
-        self.spin_bf_dog2_sigma2.setValue(self.settings.value("bf/dog2_sigma2", 2.4, float))
         self.spin_bf_dog_k.setValue(self.settings.value("bf/dog_k", 1.0, float))
         self.spin_bf_dog_min_thr.setValue(self.settings.value("bf/dog_min_thr", 5, int))
 
@@ -552,8 +532,6 @@ class AOIInspector(QMainWindow):
         self.settings.setValue("bf/method", self.combo_bf_method.currentIndex())
         self.settings.setValue("bf/dog_sigma1", self.spin_bf_dog_sigma1.value())
         self.settings.setValue("bf/dog_sigma2", self.spin_bf_dog_sigma2.value())
-        self.settings.setValue("bf/dog2_sigma1", self.spin_bf_dog2_sigma1.value())
-        self.settings.setValue("bf/dog2_sigma2", self.spin_bf_dog2_sigma2.value())
         self.settings.setValue("bf/dog_k", self.spin_bf_dog_k.value())
         self.settings.setValue("bf/dog_min_thr", self.spin_bf_dog_min_thr.value())
         self.settings.setValue("view/scale", self.view_state.get("scale", 1.0))
@@ -729,8 +707,6 @@ class AOIInspector(QMainWindow):
         dog_params = {
             "sigma1": self.spin_bf_dog_sigma1.value(),
             "sigma2": self.spin_bf_dog_sigma2.value(),
-            "sigma1_stage2": self.spin_bf_dog2_sigma1.value(),
-            "sigma2_stage2": self.spin_bf_dog2_sigma2.value(),
             "k": self.spin_bf_dog_k.value(),
             "min_thr": self.spin_bf_dog_min_thr.value(),
         }
