@@ -50,11 +50,17 @@ def process_bright_field(
         sigma2 = dog_params.get("sigma2", 2.4)
         thr_k = dog_params.get("k", 1.0)
         min_thr = dog_params.get("min_thr", 5)
+    
 
-        bf_for_process = dog_highpass_u8(img_bf_gray, sigma1, sigma2)
+        H, W = img_bf_gray.shape
+        small = cv2.resize(img_bf_gray, (W//4, H//4), interpolation=cv2.INTER_AREA)
+        bf_for_process = dog_highpass_u8(small, sigma1, sigma2)
         thr_val = robust_thr_median_mad(bf_for_process, thr_k, min_thr=min_thr)
         threshold_type = cv2.THRESH_BINARY_INV if inverse_threshold else cv2.THRESH_BINARY
         _, mask_bf = cv2.threshold(bf_for_process, thr_val, 255, threshold_type)
+        bf_for_process = cv2.resize(bf_for_process, (W, H), interpolation=cv2.INTER_AREA)
+        mask_bf = cv2.resize(mask_bf, (W, H), interpolation=cv2.INTER_AREA)
+
     else:
         bf_for_process = img_bf_gray
         if blur_enabled and blur_ksize > 1:
