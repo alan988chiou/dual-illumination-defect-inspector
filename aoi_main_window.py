@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QPushButton, QLabel, QSlider, QSpinBox,
     QCheckBox, QFrame, QSizePolicy, QGroupBox,
-    QDialog, QMessageBox, QComboBox, QStackedWidget, QDoubleSpinBox
+    QDialog, QMessageBox, QComboBox, QStackedWidget, QDoubleSpinBox, QSpacerItem
 )
 
 from PySide6.QtCore import Qt, Slot, QTimer, QSettings
@@ -275,6 +275,9 @@ class AOIInspector(QMainWindow):
         bf_input_layout.addWidget(self.slider_bf)
         bf_input_layout.addWidget(self.spin_bf)
         method1_layout.addLayout(bf_input_layout)
+
+        self.Spacer = QSpacerItem(20, 20, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        method1_layout.addItem(self.Spacer)
 
         self.stack_bf_method.addWidget(method1_widget)
 
