@@ -78,6 +78,8 @@ class AOIInspector(QMainWindow):
         self.last_view_bf_bgr = None
         self.last_view_df_bgr = None
         self.last_view_res_bgr = None
+        self.last_mask_bf = None
+        self.last_mask_df = None
 
         # Source filename and extension (used for output naming)
         self.last_input_name = "Output"
@@ -772,9 +774,18 @@ class AOIInspector(QMainWindow):
 
             view_res = cv2.cvtColor(img_bf, cv2.COLOR_GRAY2BGR)
             if mask_bf is None or mask_df_dilated is None:
+                self.last_mask_bf = None
+                self.last_mask_df = None
                 self.update_display_pixmaps(view_bf, view_df, view_res)
                 self.set_status_info()
                 return
+
+            full_mask_bf = np.zeros_like(img_bf, dtype=np.uint8)
+            full_mask_df = np.zeros_like(img_df, dtype=np.uint8)
+            full_mask_bf[y:y + h, x:x + w] = mask_bf
+            full_mask_df[y:y + h, x:x + w] = mask_df_dilated
+            self.last_mask_bf = full_mask_bf
+            self.last_mask_df = full_mask_df
 
             view_res_roi = view_res[y:y + h, x:x + w]
             if show_bf_mask and show_df_mask:
@@ -821,9 +832,14 @@ class AOIInspector(QMainWindow):
         view_res = cv2.cvtColor(img_bf, cv2.COLOR_GRAY2BGR)
 
         if mask_bf is None or mask_df_dilated is None:
+            self.last_mask_bf = None
+            self.last_mask_df = None
             self.update_display_pixmaps(view_bf, view_df, view_res)
             self.set_status_info()
             return
+
+        self.last_mask_bf = mask_bf
+        self.last_mask_df = mask_df_dilated
 
         if show_bf_mask and show_df_mask:
             mask_defect = cv2.bitwise_and(mask_bf, cv2.bitwise_not(mask_df_dilated))
@@ -1026,6 +1042,9 @@ class AOIInspector(QMainWindow):
         ):
             self.set_status_error("No result image")
             return
+        if self.last_mask_bf is None or self.last_mask_df is None:
+            self.set_status_error("No mask image")
+            return
 
         result_dir = self.ensure_result_dir()
         base = self.last_input_name
@@ -1034,9 +1053,13 @@ class AOIInspector(QMainWindow):
         bf_mark_path = os.path.join(result_dir, f"{base}_BF_Result{ext}")
         df_mark_path = os.path.join(result_dir, f"{base}_DF_Result{ext}")
         res_path = os.path.join(result_dir, f"{base}_Result{ext}")
+        bf_mask_path = os.path.join(result_dir, f"{base}_BF_Mask{ext}")
+        df_mask_path = os.path.join(result_dir, f"{base}_DF_Mask{ext}")
 
         save_image_unicode(bf_mark_path, self.last_view_bf_bgr)
         save_image_unicode(df_mark_path, self.last_view_df_bgr)
         save_image_unicode(res_path, self.last_view_res_bgr)
+        save_image_unicode(bf_mask_path, self.last_mask_bf)
+        save_image_unicode(df_mask_path, self.last_mask_df)
 
         self.set_status_warn("Saving...")
