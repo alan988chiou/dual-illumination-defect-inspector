@@ -2,6 +2,7 @@
 import os
 import cv2
 import numpy as np
+import torch
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QGridLayout, QPushButton, QLabel, QSlider, QSpinBox,
@@ -18,6 +19,53 @@ from dark_field_processor import process_dark_field
 from load_image_dialog import LoadImageDialog
 
 BACKGROUND_COLOR_CSS = "background: rgb(128, 128, 128);"
+
+
+class CSPNetDefectClassifier:
+    """Use pretrained CSPNet features to provide a quick OK/NG flow check."""
+
+    def __init__(self):
+        self.device = torch.device("cpu")
+        self.model = None
+        self.input_size = 224
+        self.ng_threshold = 0.45
+        self.available = False
+        self.error_message = ""
+
+        try:
+            import timm
+
+            self.model = timm.create_model("cspresnet50", pretrained=True)
+            self.model.eval()
+            self.model.to(self.device)
+            self.available = True
+        except Exception as exc:  # pragma: no cover - fallback for missing runtime deps
+            self.error_message = str(exc)
+
+    def _preprocess(self, patch_bgr: np.ndarray) -> torch.Tensor:
+        patch_rgb = cv2.cvtColor(patch_bgr, cv2.COLOR_BGR2RGB)
+        resized = cv2.resize(patch_rgb, (self.input_size, self.input_size), interpolation=cv2.INTER_AREA)
+
+        tensor = torch.from_numpy(resized).float() / 255.0
+        tensor = tensor.permute(2, 0, 1).unsqueeze(0)
+
+        mean = torch.tensor([0.485, 0.456, 0.406], dtype=tensor.dtype).view(1, 3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225], dtype=tensor.dtype).view(1, 3, 1, 1)
+        return (tensor - mean) / std
+
+    def classify(self, patch_bgr: np.ndarray):
+        if not self.available or patch_bgr is None or patch_bgr.size == 0:
+            return "N/A", 0.0
+
+        with torch.no_grad():
+            tensor = self._preprocess(patch_bgr).to(self.device)
+            logits = self.model(tensor)
+            probs = torch.softmax(logits, dim=1)
+            top_confidence = float(probs.max().item())
+
+        ng_score = 1.0 - top_confidence
+        label = "NG" if ng_score >= self.ng_threshold else "OK"
+        return label, ng_score
 
 
 def read_image_unicode(path: str, flags):
@@ -120,6 +168,7 @@ class AOIInspector(QMainWindow):
         self.reset_view_next_update = False
 
         self.init_ui()
+        self.classifier = CSPNetDefectClassifier()
         self.load_settings()
 
     def init_ui(self):
@@ -806,7 +855,7 @@ class AOIInspector(QMainWindow):
                 view_res_roi[mask_df_dilated == 255] = [0, 255, 0]
 
             if show_bf_mask:
-                self.draw_defect_boxes(view_res, box_mask, offset=(x, y))
+                self.draw_defect_boxes(view_res, box_mask, source_gray=img_bf, offset=(x, y))
 
             self.update_display_pixmaps(view_bf, view_df, view_res)
             self.set_status_info()
@@ -865,7 +914,7 @@ class AOIInspector(QMainWindow):
             view_res[mask_df_dilated == 255] = [0, 255, 0]
 
         if show_bf_mask:
-            self.draw_defect_boxes(view_res, box_mask)
+            self.draw_defect_boxes(view_res, box_mask, source_gray=img_bf)
 
         self.update_display_pixmaps(view_bf, view_df, view_res)
         self.set_status_info()
@@ -879,24 +928,72 @@ class AOIInspector(QMainWindow):
             return
         self.perform_calculation()
 
-    def draw_defect_boxes(self, result_bgr: np.ndarray, defect_mask: np.ndarray, offset=(0, 0)):
-        if result_bgr is None or defect_mask is None:
+    def draw_defect_boxes(
+        self,
+        result_bgr: np.ndarray,
+        defect_mask: np.ndarray,
+        source_gray: np.ndarray,
+        offset=(0, 0),
+    ):
+        if result_bgr is None or defect_mask is None or source_gray is None:
             return
 
         num_labels, _, stats, _ = cv2.connectedComponentsWithStats(defect_mask, connectivity=8)
         ox, oy = offset
+        image_h, image_w = source_gray.shape[:2]
 
         for label in range(1, num_labels):
             x, y, w, h, area = stats[label]
             if area <= 0:
                 continue
 
+            x1 = int(x + ox)
+            y1 = int(y + oy)
+            x2 = int(x + ox + w)
+            y2 = int(y + oy + h)
+
+            x1 = max(0, min(x1, image_w - 1))
+            y1 = max(0, min(y1, image_h - 1))
+            x2 = max(x1 + 1, min(x2, image_w))
+            y2 = max(y1 + 1, min(y2, image_h))
+
+            patch = source_gray[y1:y2, x1:x2]
+            if patch.size == 0:
+                defect_label, ng_score = "N/A", 0.0
+            else:
+                patch_bgr = cv2.cvtColor(patch, cv2.COLOR_GRAY2BGR)
+                defect_label, ng_score = self.classifier.classify(patch_bgr)
+
             cv2.rectangle(
                 result_bgr,
-                (int(x + ox), int(y + oy)),
-                (int(x + ox + w - 1), int(y + oy + h - 1)),
+                (x1, y1),
+                (x2 - 1, y2 - 1),
                 (255, 0, 255),
                 2,
+            )
+
+            text = f"{defect_label} ({ng_score:.2f})"
+            text_x = x1
+            text_y = y1 - 6 if y1 > 18 else min(y2 + 18, image_h - 4)
+            cv2.putText(
+                result_bgr,
+                text,
+                (text_x, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                result_bgr,
+                text,
+                (text_x, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 0, 0),
+                1,
+                cv2.LINE_AA,
             )
 
     def add_roi(self):
