@@ -29,6 +29,7 @@ class CSPNetDefectClassifier:
         self.device = None
         self.input_size = 224
         self.ng_threshold = 0.45
+        self.model_name = "mobilenetv3_small_100"
         self.available = False
         self.backend = "heuristic"
         self.error_message = ""
@@ -41,11 +42,11 @@ class CSPNetDefectClassifier:
 
             self.torch = torch
             self.device = torch.device("cpu")
-            self.model = timm.create_model("cspresnet50", pretrained=True)
+            self.model = timm.create_model(self.model_name, pretrained=True)
             self.model.eval()
             self.model.to(self.device)
             self.available = True
-            self.backend = "cspresnet50-pretrained"
+            self.backend = f"{self.model_name}-pretrained"
         except Exception as exc:  # pragma: no cover - runtime dependency may not exist
             self.error_message = str(exc)
 
@@ -221,7 +222,14 @@ class AOIInspector(QMainWindow):
 
         self.init_ui()
         self.classifier = CSPNetDefectClassifier()
+        self._log_progress(
+            f"Classifier backend initialized: {self.classifier.backend}"
+            + ("" if self.classifier.available else f" (fallback reason: {self.classifier.error_message})")
+        )
         self.load_settings()
+
+    def _log_progress(self, message: str):
+        print(f"[AOI] {message}", flush=True)
 
     def init_ui(self):
         main_widget = QWidget()
@@ -792,6 +800,8 @@ class AOIInspector(QMainWindow):
         if self.img_bf_original is None or self.img_df_original is None:
             return
 
+        self._log_progress("Start processing (0%)")
+
         thresh_bf = self.spin_bf.value()
         thresh_df = self.spin_df.value()
         show_bf_mask = self.chk_bf.isChecked()
@@ -839,6 +849,7 @@ class AOIInspector(QMainWindow):
             roi_rect = (x, y, w, h)
 
         if roi_rect:
+            self._log_progress("ROI mode detected (10%)")
             x, y, w, h = roi_rect
             img_bf_roi = img_bf[y:y + h, x:x + w]
             img_df_roi = img_df[y:y + h, x:x + w]
@@ -853,6 +864,7 @@ class AOIInspector(QMainWindow):
                 method=bf_method,
                 dog_params=dog_params,
             )
+            self._log_progress("Bright field processed (35%)")
 
             df_processed, mask_df_raw, mask_df_dilated, view_df_roi = process_dark_field(
                 img_df_roi,
@@ -862,6 +874,7 @@ class AOIInspector(QMainWindow):
                 iters=iters,
                 inverse_threshold=inverse_df,
             )
+            self._log_progress("Dark field processed (55%)")
 
             self.current_bf_processed = img_bf.copy()
             if bf_processed is not None:
@@ -913,8 +926,10 @@ class AOIInspector(QMainWindow):
 
             if show_bf_mask:
                 self.draw_defect_boxes(view_res, box_mask, source_gray=img_bf, offset=(x, y))
+                self._log_progress("Defect box classification complete (85%)")
 
             self.update_display_pixmaps(view_bf, view_df, view_res)
+            self._log_progress("Display updated (100%)")
             self.set_status_info()
             return
 
@@ -928,6 +943,7 @@ class AOIInspector(QMainWindow):
             method=bf_method,
             dog_params=dog_params,
         )
+        self._log_progress("Bright field processed (35%)")
 
         self.current_bf_processed = bf_processed
 
@@ -939,6 +955,7 @@ class AOIInspector(QMainWindow):
             iters=iters,
             inverse_threshold=inverse_df,
         )
+        self._log_progress("Dark field processed (55%)")
 
         self.current_df_processed = df_processed
 
@@ -972,8 +989,10 @@ class AOIInspector(QMainWindow):
 
         if show_bf_mask:
             self.draw_defect_boxes(view_res, box_mask, source_gray=img_bf)
+            self._log_progress("Defect box classification complete (85%)")
 
         self.update_display_pixmaps(view_bf, view_df, view_res)
+        self._log_progress("Display updated (100%)")
         self.set_status_info()
 
     @Slot()
@@ -996,10 +1015,12 @@ class AOIInspector(QMainWindow):
             return
 
         num_labels, _, stats, _ = cv2.connectedComponentsWithStats(defect_mask, connectivity=8)
+        total_boxes = max(0, num_labels - 1)
+        self._log_progress(f"Classifying {total_boxes} defect boxes")
         ox, oy = offset
         image_h, image_w = source_gray.shape[:2]
 
-        for label in range(1, num_labels):
+        for idx, label in enumerate(range(1, num_labels), start=1):
             x, y, w, h, area = stats[label]
             if area <= 0:
                 continue
@@ -1020,6 +1041,9 @@ class AOIInspector(QMainWindow):
             else:
                 patch_bgr = cv2.cvtColor(patch, cv2.COLOR_GRAY2BGR)
                 defect_label, ng_score = self.classifier.classify(patch_bgr)
+
+            if idx % 10 == 0 or idx == total_boxes:
+                self._log_progress(f"Box classification progress: {idx}/{total_boxes}")
 
             cv2.rectangle(
                 result_bgr,
