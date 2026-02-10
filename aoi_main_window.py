@@ -1,5 +1,6 @@
 # aoi_main_window.py
 import os
+from datetime import datetime
 import cv2
 import numpy as np
 from PySide6.QtWidgets import (
@@ -229,7 +230,8 @@ class AOIInspector(QMainWindow):
         self.load_settings()
 
     def _log_progress(self, message: str):
-        print(f"[AOI] {message}", flush=True)
+        now = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        print(f"[AOI {now}] {message}", flush=True)
 
     def init_ui(self):
         main_widget = QWidget()
