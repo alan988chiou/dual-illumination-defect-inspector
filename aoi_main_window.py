@@ -891,7 +891,7 @@ class AOIInspector(QMainWindow):
                 result_bgr,
                 (int(x + ox), int(y + oy)),
                 (int(x + ox + w - 1), int(y + oy + h - 1)),
-                (0, 255, 0),
+                (255, 0, 255),
                 2,
             )
 
