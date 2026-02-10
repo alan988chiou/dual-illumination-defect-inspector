@@ -789,19 +789,22 @@ class AOIInspector(QMainWindow):
             self.last_mask_df = full_mask_df
 
             view_res_roi = view_res[y:y + h, x:x + w]
+            mask_defect = cv2.bitwise_and(mask_bf, cv2.bitwise_not(mask_df_dilated))
+
             if show_bf_mask and show_df_mask:
-                mask_defect = cv2.bitwise_and(mask_bf, cv2.bitwise_not(mask_df_dilated))
                 mask_common = cv2.bitwise_and(mask_bf, mask_df_dilated)
                 mask_df_only = cv2.bitwise_and(mask_df_dilated, cv2.bitwise_not(mask_bf))
 
                 view_res_roi[mask_defect == 255] = [0, 0, 255]
                 view_res_roi[mask_df_only == 255] = [0, 255, 0]
                 view_res_roi[mask_common == 255] = [0, 255, 255]
-                self.draw_defect_boxes(view_res, mask_defect, offset=(x, y))
             elif show_bf_mask and not show_df_mask:
                 view_res_roi[mask_bf == 255] = [0, 0, 255]
             elif not show_bf_mask and show_df_mask:
                 view_res_roi[mask_df_dilated == 255] = [0, 255, 0]
+
+            if show_bf_mask:
+                self.draw_defect_boxes(view_res, mask_defect, offset=(x, y))
 
             self.update_display_pixmaps(view_bf, view_df, view_res)
             self.set_status_info()
@@ -843,19 +846,22 @@ class AOIInspector(QMainWindow):
         self.last_mask_bf = mask_bf
         self.last_mask_df = mask_df_dilated
 
+        mask_defect = cv2.bitwise_and(mask_bf, cv2.bitwise_not(mask_df_dilated))
+
         if show_bf_mask and show_df_mask:
-            mask_defect = cv2.bitwise_and(mask_bf, cv2.bitwise_not(mask_df_dilated))
             mask_common = cv2.bitwise_and(mask_bf, mask_df_dilated)
             mask_df_only = cv2.bitwise_and(mask_df_dilated, cv2.bitwise_not(mask_bf))
 
             view_res[mask_defect == 255] = [0, 0, 255]
             view_res[mask_df_only == 255] = [0, 255, 0]
             view_res[mask_common == 255] = [0, 255, 255]
-            self.draw_defect_boxes(view_res, mask_defect)
         elif show_bf_mask and not show_df_mask:
             view_res[mask_bf == 255] = [0, 0, 255]
         elif not show_bf_mask and show_df_mask:
             view_res[mask_df_dilated == 255] = [0, 255, 0]
+
+        if show_bf_mask:
+            self.draw_defect_boxes(view_res, mask_defect)
 
         self.update_display_pixmaps(view_bf, view_df, view_res)
         self.set_status_info()
