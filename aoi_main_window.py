@@ -37,6 +37,8 @@ class CSPNetDefectClassifier:
             import torch
             import timm
 
+            self._ensure_torch_compat(torch)
+
             self.torch = torch
             self.device = torch.device("cpu")
             self.model = timm.create_model("cspresnet50", pretrained=True)
@@ -46,6 +48,36 @@ class CSPNetDefectClassifier:
             self.backend = "cspresnet50-pretrained"
         except Exception as exc:  # pragma: no cover - runtime dependency may not exist
             self.error_message = str(exc)
+
+    @staticmethod
+    def _ensure_torch_compat(torch_module):
+        """Backfill torch.frombuffer for older torch (e.g., 1.9.x)."""
+        if hasattr(torch_module, "frombuffer"):
+            return
+
+        dtype_map = {
+            torch_module.uint8: np.uint8,
+            torch_module.int8: np.int8,
+            torch_module.int16: np.int16,
+            torch_module.int32: np.int32,
+            torch_module.int64: np.int64,
+            torch_module.float16: np.float16,
+            torch_module.float32: np.float32,
+            torch_module.float64: np.float64,
+        }
+
+        def _frombuffer(buffer, *, dtype, count=-1, offset=0, requires_grad=False):
+            np_dtype = dtype_map.get(dtype)
+            if np_dtype is None:
+                raise TypeError(f"Unsupported dtype for compatibility frombuffer: {dtype}")
+
+            np_arr = np.frombuffer(buffer, dtype=np_dtype, count=count, offset=offset)
+            tensor = torch_module.from_numpy(np_arr)
+            if requires_grad:
+                tensor.requires_grad_(True)
+            return tensor
+
+        torch_module.frombuffer = _frombuffer
 
     def _preprocess(self, patch_bgr: np.ndarray):
         patch_rgb = cv2.cvtColor(patch_bgr, cv2.COLOR_BGR2RGB)
