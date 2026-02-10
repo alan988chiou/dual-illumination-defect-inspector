@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QHBoxLayout, QPushButton, QLabel, QSlider, QSpinBox,
+    QHBoxLayout, QGridLayout, QPushButton, QLabel, QSlider, QSpinBox,
     QCheckBox, QFrame, QSizePolicy, QGroupBox,
     QDialog, QMessageBox, QComboBox, QStackedWidget, QDoubleSpinBox, QSpacerItem
 )
@@ -179,28 +179,29 @@ class AOIInspector(QMainWindow):
 
         # Operations group
         group_op = QGroupBox("Operations")
-        layout_op = QVBoxLayout()
+        layout_op = QGridLayout()
+        layout_op.setSpacing(8)
 
         self.btn_load = QPushButton("Load Image")
         self.btn_load.setMinimumHeight(40)
         self.btn_load.clicked.connect(self.load_image)
-        layout_op.addWidget(self.btn_load)
+        layout_op.addWidget(self.btn_load, 0, 0)
 
         # Save buttons
         self.btn_save_bfdf = QPushButton("Save BF/DF Image")
         self.btn_save_bfdf.setMinimumHeight(40)
         self.btn_save_bfdf.clicked.connect(self.save_bf_df)
-        layout_op.addWidget(self.btn_save_bfdf)
+        layout_op.addWidget(self.btn_save_bfdf, 0, 1)
 
         self.btn_save_result = QPushButton("Save Result")
         self.btn_save_result.setMinimumHeight(40)
         self.btn_save_result.clicked.connect(self.save_result)
-        layout_op.addWidget(self.btn_save_result)
+        layout_op.addWidget(self.btn_save_result, 1, 0)
 
         self.btn_roi_toggle = QPushButton("Add ROI")
         self.btn_roi_toggle.setMinimumHeight(40)
         self.btn_roi_toggle.clicked.connect(self.toggle_roi)
-        layout_op.addWidget(self.btn_roi_toggle)
+        layout_op.addWidget(self.btn_roi_toggle, 1, 1)
 
         group_op.setLayout(layout_op)
         control_layout.addWidget(group_op)
