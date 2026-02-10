@@ -205,6 +205,8 @@ class AOIInspector(QMainWindow):
             "enabled": False,
             "rect": None,
         }
+        self._saved_roi_enabled = False
+        self._saved_roi_rect = None
 
         self._bf_from_slider = False
         self._df_from_slider = False
@@ -630,6 +632,17 @@ class AOIInspector(QMainWindow):
         self.view_state["center_x"] = self.settings.value("view/center_x", self.view_state["center_x"], float)
         self.view_state["center_y"] = self.settings.value("view/center_y", self.view_state["center_y"], float)
 
+        self._saved_roi_enabled = self.settings.value("roi/enabled", False, bool)
+        roi_x = self.settings.value("roi/x", None)
+        roi_y = self.settings.value("roi/y", None)
+        roi_w = self.settings.value("roi/w", None)
+        roi_h = self.settings.value("roi/h", None)
+        if None not in (roi_x, roi_y, roi_w, roi_h):
+            try:
+                self._saved_roi_rect = (int(roi_x), int(roi_y), int(roi_w), int(roi_h))
+            except (TypeError, ValueError):
+                self._saved_roi_rect = None
+
     def save_settings(self):
         self.settings.setValue("thresholds/bf", self.slider_bf.value())
         self.settings.setValue("thresholds/df", self.slider_df.value())
@@ -650,6 +663,15 @@ class AOIInspector(QMainWindow):
         self.settings.setValue("view/scale", self.view_state.get("scale", 1.0))
         self.settings.setValue("view/center_x", self.view_state.get("center_x", 0.0))
         self.settings.setValue("view/center_y", self.view_state.get("center_y", 0.0))
+
+        self.settings.setValue("roi/enabled", self.roi_state.get("enabled", False))
+        rect = self.roi_state.get("rect")
+        if rect is not None:
+            x, y, w, h = rect
+            self.settings.setValue("roi/x", int(x))
+            self.settings.setValue("roi/y", int(y))
+            self.settings.setValue("roi/w", int(w))
+            self.settings.setValue("roi/h", int(h))
 
     def closeEvent(self, event):
         self.save_settings()
@@ -790,7 +812,28 @@ class AOIInspector(QMainWindow):
         self.img_bf_original = img_bf_gray
         self.img_df_original = img_df_gray
 
+        if self._saved_roi_enabled:
+            img_h, img_w = self.img_bf_original.shape
+            if self._saved_roi_rect is None:
+                roi_w = max(int(img_w * 0.5), 10)
+                roi_h = max(int(img_h * 0.5), 10)
+                roi_x = int((img_w - roi_w) / 2)
+                roi_y = int((img_h - roi_h) / 2)
+            else:
+                roi_x, roi_y, roi_w, roi_h = self._saved_roi_rect
+                roi_x = max(0, min(int(roi_x), img_w - 1))
+                roi_y = max(0, min(int(roi_y), img_h - 1))
+                roi_w = max(1, min(int(roi_w), img_w - roi_x))
+                roi_h = max(1, min(int(roi_h), img_h - roi_y))
+
+            self.roi_state["enabled"] = True
+            self.roi_state["rect"] = (roi_x, roi_y, roi_w, roi_h)
+        else:
+            self.roi_state["enabled"] = False
+            self.roi_state["rect"] = None
+
         self.reset_view_next_update = True
+        self.update_buttons_state(info_state=True)
         self.update_result()
 
     def resizeEvent(self, event: QResizeEvent):
