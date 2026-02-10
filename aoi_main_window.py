@@ -796,6 +796,7 @@ class AOIInspector(QMainWindow):
                 view_res_roi[mask_defect == 255] = [0, 0, 255]
                 view_res_roi[mask_df_only == 255] = [0, 255, 0]
                 view_res_roi[mask_common == 255] = [0, 255, 255]
+                self.draw_defect_boxes(view_res, mask_defect, offset=(x, y))
             elif show_bf_mask and not show_df_mask:
                 view_res_roi[mask_bf == 255] = [0, 0, 255]
             elif not show_bf_mask and show_df_mask:
@@ -849,6 +850,7 @@ class AOIInspector(QMainWindow):
             view_res[mask_defect == 255] = [0, 0, 255]
             view_res[mask_df_only == 255] = [0, 255, 0]
             view_res[mask_common == 255] = [0, 255, 255]
+            self.draw_defect_boxes(view_res, mask_defect)
         elif show_bf_mask and not show_df_mask:
             view_res[mask_bf == 255] = [0, 0, 255]
         elif not show_bf_mask and show_df_mask:
@@ -865,6 +867,26 @@ class AOIInspector(QMainWindow):
             self.set_status_info()
             return
         self.perform_calculation()
+
+    def draw_defect_boxes(self, result_bgr: np.ndarray, defect_mask: np.ndarray, offset=(0, 0)):
+        if result_bgr is None or defect_mask is None:
+            return
+
+        num_labels, _, stats, _ = cv2.connectedComponentsWithStats(defect_mask, connectivity=8)
+        ox, oy = offset
+
+        for label in range(1, num_labels):
+            x, y, w, h, area = stats[label]
+            if area <= 0:
+                continue
+
+            cv2.rectangle(
+                result_bgr,
+                (int(x + ox), int(y + oy)),
+                (int(x + ox + w - 1), int(y + oy + h - 1)),
+                (0, 255, 0),
+                2,
+            )
 
     def add_roi(self):
         if self.img_bf_original is None:
