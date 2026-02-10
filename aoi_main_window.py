@@ -799,7 +799,7 @@ class AOIInspector(QMainWindow):
                 view_res_roi[mask_df_only == 255] = [0, 255, 0]
                 view_res_roi[mask_common == 255] = [0, 255, 255]
             elif show_bf_mask and not show_df_mask:
-                view_res_roi[mask_bf == 255] = [0, 0, 255]
+                view_res_roi[mask_defect == 255] = [0, 0, 255]
             elif not show_bf_mask and show_df_mask:
                 view_res_roi[mask_df_dilated == 255] = [0, 255, 0]
 
@@ -856,7 +856,7 @@ class AOIInspector(QMainWindow):
             view_res[mask_df_only == 255] = [0, 255, 0]
             view_res[mask_common == 255] = [0, 255, 255]
         elif show_bf_mask and not show_df_mask:
-            view_res[mask_bf == 255] = [0, 0, 255]
+            view_res[mask_defect == 255] = [0, 0, 255]
         elif not show_bf_mask and show_df_mask:
             view_res[mask_df_dilated == 255] = [0, 255, 0]
 
