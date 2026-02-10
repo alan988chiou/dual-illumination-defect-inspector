@@ -2,7 +2,6 @@
 import os
 import cv2
 import numpy as np
-import torch
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
     QHBoxLayout, QGridLayout, QPushButton, QLabel, QSlider, QSpinBox,
@@ -22,48 +21,69 @@ BACKGROUND_COLOR_CSS = "background: rgb(128, 128, 128);"
 
 
 class CSPNetDefectClassifier:
-    """Use pretrained CSPNet features to provide a quick OK/NG flow check."""
+    """CSPNet classifier with robust fallback so result labels are never stuck at N/A."""
 
     def __init__(self):
-        self.device = torch.device("cpu")
         self.model = None
+        self.torch = None
+        self.device = None
         self.input_size = 224
         self.ng_threshold = 0.45
         self.available = False
+        self.backend = "heuristic"
         self.error_message = ""
 
         try:
+            import torch
             import timm
 
+            self.torch = torch
+            self.device = torch.device("cpu")
             self.model = timm.create_model("cspresnet50", pretrained=True)
             self.model.eval()
             self.model.to(self.device)
             self.available = True
-        except Exception as exc:  # pragma: no cover - fallback for missing runtime deps
+            self.backend = "cspresnet50-pretrained"
+        except Exception as exc:  # pragma: no cover - runtime dependency may not exist
             self.error_message = str(exc)
 
-    def _preprocess(self, patch_bgr: np.ndarray) -> torch.Tensor:
+    def _preprocess(self, patch_bgr: np.ndarray):
         patch_rgb = cv2.cvtColor(patch_bgr, cv2.COLOR_BGR2RGB)
         resized = cv2.resize(patch_rgb, (self.input_size, self.input_size), interpolation=cv2.INTER_AREA)
 
-        tensor = torch.from_numpy(resized).float() / 255.0
+        tensor = self.torch.from_numpy(resized).float() / 255.0
         tensor = tensor.permute(2, 0, 1).unsqueeze(0)
 
-        mean = torch.tensor([0.485, 0.456, 0.406], dtype=tensor.dtype).view(1, 3, 1, 1)
-        std = torch.tensor([0.229, 0.224, 0.225], dtype=tensor.dtype).view(1, 3, 1, 1)
+        mean = self.torch.tensor([0.485, 0.456, 0.406], dtype=tensor.dtype).view(1, 3, 1, 1)
+        std = self.torch.tensor([0.229, 0.224, 0.225], dtype=tensor.dtype).view(1, 3, 1, 1)
         return (tensor - mean) / std
 
+    def _classify_with_heuristic(self, patch_bgr: np.ndarray):
+        patch_gray = cv2.cvtColor(patch_bgr, cv2.COLOR_BGR2GRAY)
+
+        contrast = float(np.std(patch_gray) / 64.0)
+        edge_energy = float(np.mean(np.abs(cv2.Laplacian(patch_gray, cv2.CV_32F))) / 40.0)
+        bright_ratio = float(np.mean(patch_gray > 210))
+
+        ng_score = 0.45 * contrast + 0.45 * edge_energy + 0.10 * bright_ratio
+        ng_score = float(np.clip(ng_score, 0.0, 1.0))
+        label = "NG" if ng_score >= 0.50 else "OK"
+        return label, ng_score
+
     def classify(self, patch_bgr: np.ndarray):
-        if not self.available or patch_bgr is None or patch_bgr.size == 0:
+        if patch_bgr is None or patch_bgr.size == 0:
             return "N/A", 0.0
 
-        with torch.no_grad():
+        if not self.available:
+            return self._classify_with_heuristic(patch_bgr)
+
+        with self.torch.no_grad():
             tensor = self._preprocess(patch_bgr).to(self.device)
             logits = self.model(tensor)
-            probs = torch.softmax(logits, dim=1)
+            probs = self.torch.softmax(logits, dim=1)
             top_confidence = float(probs.max().item())
 
-        ng_score = 1.0 - top_confidence
+        ng_score = float(np.clip(1.0 - top_confidence, 0.0, 1.0))
         label = "NG" if ng_score >= self.ng_threshold else "OK"
         return label, ng_score
 
@@ -505,6 +525,11 @@ class AOIInspector(QMainWindow):
         self.btn_roi_toggle.setText("Remove ROI" if self.roi_state.get("enabled") else "Add ROI")
 
     def set_status_info(self, text="Ready"):
+        if text == "Ready" and getattr(self, "classifier", None) is not None:
+            if self.classifier.available:
+                text = "Ready (CSPNet)"
+            else:
+                text = "Ready (Heuristic fallback)"
         self.status_label.setText(text)
         self.status_label.setStyleSheet(
             "background-color: #D7F5C3;"
