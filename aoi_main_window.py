@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout,
-    QHBoxLayout, QPushButton, QLabel, QSlider, QSpinBox,
+    QHBoxLayout, QGridLayout, QPushButton, QLabel, QSlider, QSpinBox,
     QCheckBox, QFrame, QSizePolicy, QGroupBox,
     QDialog, QMessageBox, QComboBox, QStackedWidget, QDoubleSpinBox, QSpacerItem
 )
@@ -179,28 +179,29 @@ class AOIInspector(QMainWindow):
 
         # Operations group
         group_op = QGroupBox("Operations")
-        layout_op = QVBoxLayout()
+        layout_op = QGridLayout()
+        layout_op.setSpacing(8)
 
         self.btn_load = QPushButton("Load Image")
         self.btn_load.setMinimumHeight(40)
         self.btn_load.clicked.connect(self.load_image)
-        layout_op.addWidget(self.btn_load)
+        layout_op.addWidget(self.btn_load, 0, 0)
 
         # Save buttons
         self.btn_save_bfdf = QPushButton("Save BF/DF Image")
         self.btn_save_bfdf.setMinimumHeight(40)
         self.btn_save_bfdf.clicked.connect(self.save_bf_df)
-        layout_op.addWidget(self.btn_save_bfdf)
+        layout_op.addWidget(self.btn_save_bfdf, 0, 1)
 
         self.btn_save_result = QPushButton("Save Result")
         self.btn_save_result.setMinimumHeight(40)
         self.btn_save_result.clicked.connect(self.save_result)
-        layout_op.addWidget(self.btn_save_result)
+        layout_op.addWidget(self.btn_save_result, 1, 0)
 
         self.btn_roi_toggle = QPushButton("Add ROI")
         self.btn_roi_toggle.setMinimumHeight(40)
         self.btn_roi_toggle.clicked.connect(self.toggle_roi)
-        layout_op.addWidget(self.btn_roi_toggle)
+        layout_op.addWidget(self.btn_roi_toggle, 1, 1)
 
         group_op.setLayout(layout_op)
         control_layout.addWidget(group_op)
@@ -788,8 +789,10 @@ class AOIInspector(QMainWindow):
             self.last_mask_df = full_mask_df
 
             view_res_roi = view_res[y:y + h, x:x + w]
+            mask_defect = cv2.bitwise_and(mask_bf, cv2.bitwise_not(mask_df_dilated))
+            box_mask = mask_defect
+
             if show_bf_mask and show_df_mask:
-                mask_defect = cv2.bitwise_and(mask_bf, cv2.bitwise_not(mask_df_dilated))
                 mask_common = cv2.bitwise_and(mask_bf, mask_df_dilated)
                 mask_df_only = cv2.bitwise_and(mask_df_dilated, cv2.bitwise_not(mask_bf))
 
@@ -798,8 +801,12 @@ class AOIInspector(QMainWindow):
                 view_res_roi[mask_common == 255] = [0, 255, 255]
             elif show_bf_mask and not show_df_mask:
                 view_res_roi[mask_bf == 255] = [0, 0, 255]
+                box_mask = mask_bf
             elif not show_bf_mask and show_df_mask:
                 view_res_roi[mask_df_dilated == 255] = [0, 255, 0]
+
+            if show_bf_mask:
+                self.draw_defect_boxes(view_res, box_mask, offset=(x, y))
 
             self.update_display_pixmaps(view_bf, view_df, view_res)
             self.set_status_info()
@@ -841,8 +848,10 @@ class AOIInspector(QMainWindow):
         self.last_mask_bf = mask_bf
         self.last_mask_df = mask_df_dilated
 
+        mask_defect = cv2.bitwise_and(mask_bf, cv2.bitwise_not(mask_df_dilated))
+        box_mask = mask_defect
+
         if show_bf_mask and show_df_mask:
-            mask_defect = cv2.bitwise_and(mask_bf, cv2.bitwise_not(mask_df_dilated))
             mask_common = cv2.bitwise_and(mask_bf, mask_df_dilated)
             mask_df_only = cv2.bitwise_and(mask_df_dilated, cv2.bitwise_not(mask_bf))
 
@@ -851,8 +860,12 @@ class AOIInspector(QMainWindow):
             view_res[mask_common == 255] = [0, 255, 255]
         elif show_bf_mask and not show_df_mask:
             view_res[mask_bf == 255] = [0, 0, 255]
+            box_mask = mask_bf
         elif not show_bf_mask and show_df_mask:
             view_res[mask_df_dilated == 255] = [0, 255, 0]
+
+        if show_bf_mask:
+            self.draw_defect_boxes(view_res, box_mask)
 
         self.update_display_pixmaps(view_bf, view_df, view_res)
         self.set_status_info()
@@ -865,6 +878,26 @@ class AOIInspector(QMainWindow):
             self.set_status_info()
             return
         self.perform_calculation()
+
+    def draw_defect_boxes(self, result_bgr: np.ndarray, defect_mask: np.ndarray, offset=(0, 0)):
+        if result_bgr is None or defect_mask is None:
+            return
+
+        num_labels, _, stats, _ = cv2.connectedComponentsWithStats(defect_mask, connectivity=8)
+        ox, oy = offset
+
+        for label in range(1, num_labels):
+            x, y, w, h, area = stats[label]
+            if area <= 0:
+                continue
+
+            cv2.rectangle(
+                result_bgr,
+                (int(x + ox), int(y + oy)),
+                (int(x + ox + w - 1), int(y + oy + h - 1)),
+                (255, 0, 255),
+                2,
+            )
 
     def add_roi(self):
         if self.img_bf_original is None:
