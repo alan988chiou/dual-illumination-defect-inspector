@@ -1,5 +1,6 @@
 # aoi_main_window.py
 import os
+from datetime import datetime
 import cv2
 import numpy as np
 from PySide6.QtWidgets import (
@@ -18,6 +19,107 @@ from dark_field_processor import process_dark_field
 from load_image_dialog import LoadImageDialog
 
 BACKGROUND_COLOR_CSS = "background: rgb(128, 128, 128);"
+
+
+class CSPNetDefectClassifier:
+    """CSPNet classifier with robust fallback so result labels are never stuck at N/A."""
+
+    def __init__(self):
+        self.model = None
+        self.torch = None
+        self.device = None
+        self.input_size = 224
+        self.ng_threshold = 0.45
+        self.model_name = "mobilenetv3_small_100"
+        self.available = False
+        self.backend = "heuristic"
+        self.error_message = ""
+
+        try:
+            import torch
+            import timm
+
+            self._ensure_torch_compat(torch)
+
+            self.torch = torch
+            self.device = torch.device("cpu")
+            self.model = timm.create_model(self.model_name, pretrained=True)
+            self.model.eval()
+            self.model.to(self.device)
+            self.available = True
+            self.backend = f"{self.model_name}-pretrained"
+        except Exception as exc:  # pragma: no cover - runtime dependency may not exist
+            self.error_message = str(exc)
+
+    @staticmethod
+    def _ensure_torch_compat(torch_module):
+        """Backfill torch.frombuffer for older torch (e.g., 1.9.x)."""
+        if hasattr(torch_module, "frombuffer"):
+            return
+
+        dtype_map = {
+            torch_module.uint8: np.uint8,
+            torch_module.int8: np.int8,
+            torch_module.int16: np.int16,
+            torch_module.int32: np.int32,
+            torch_module.int64: np.int64,
+            torch_module.float16: np.float16,
+            torch_module.float32: np.float32,
+            torch_module.float64: np.float64,
+        }
+
+        def _frombuffer(buffer, *, dtype, count=-1, offset=0, requires_grad=False):
+            np_dtype = dtype_map.get(dtype)
+            if np_dtype is None:
+                raise TypeError(f"Unsupported dtype for compatibility frombuffer: {dtype}")
+
+            np_arr = np.frombuffer(buffer, dtype=np_dtype, count=count, offset=offset)
+            tensor = torch_module.from_numpy(np_arr)
+            if requires_grad:
+                tensor.requires_grad_(True)
+            return tensor
+
+        torch_module.frombuffer = _frombuffer
+
+    def _preprocess(self, patch_bgr: np.ndarray):
+        patch_rgb = cv2.cvtColor(patch_bgr, cv2.COLOR_BGR2RGB)
+        resized = cv2.resize(patch_rgb, (self.input_size, self.input_size), interpolation=cv2.INTER_AREA)
+
+        tensor = self.torch.from_numpy(resized).float() / 255.0
+        tensor = tensor.permute(2, 0, 1).unsqueeze(0)
+
+        mean = self.torch.tensor([0.485, 0.456, 0.406], dtype=tensor.dtype).view(1, 3, 1, 1)
+        std = self.torch.tensor([0.229, 0.224, 0.225], dtype=tensor.dtype).view(1, 3, 1, 1)
+        return (tensor - mean) / std
+
+    def _classify_with_heuristic(self, patch_bgr: np.ndarray):
+        patch_gray = cv2.cvtColor(patch_bgr, cv2.COLOR_BGR2GRAY)
+
+        contrast = float(np.std(patch_gray) / 64.0)
+        edge_energy = float(np.mean(np.abs(cv2.Laplacian(patch_gray, cv2.CV_32F))) / 40.0)
+        bright_ratio = float(np.mean(patch_gray > 210))
+
+        ng_score = 0.45 * contrast + 0.45 * edge_energy + 0.10 * bright_ratio
+        ng_score = float(np.clip(ng_score, 0.0, 1.0))
+        label = "NG" if ng_score >= 0.50 else "OK"
+        return label, ng_score
+
+    def classify(self, patch_bgr: np.ndarray):
+        if patch_bgr is None or patch_bgr.size == 0:
+            return "N/A", 0.0
+
+        if not self.available:
+            return self._classify_with_heuristic(patch_bgr)
+
+        with self.torch.no_grad():
+            tensor = self._preprocess(patch_bgr).to(self.device)
+            logits = self.model(tensor)
+            probs = self.torch.softmax(logits, dim=1)
+            top_confidence = float(probs.max().item())
+
+        ng_score = float(np.clip(1.0 - top_confidence, 0.0, 1.0))
+        label = "NG" if ng_score >= self.ng_threshold else "OK"
+        return label, ng_score
 
 
 def read_image_unicode(path: str, flags):
@@ -103,6 +205,8 @@ class AOIInspector(QMainWindow):
             "enabled": False,
             "rect": None,
         }
+        self._saved_roi_enabled = False
+        self._saved_roi_rect = None
 
         self._bf_from_slider = False
         self._df_from_slider = False
@@ -120,7 +224,16 @@ class AOIInspector(QMainWindow):
         self.reset_view_next_update = False
 
         self.init_ui()
+        self.classifier = CSPNetDefectClassifier()
+        self._log_progress(
+            f"Classifier backend initialized: {self.classifier.backend}"
+            + ("" if self.classifier.available else f" (fallback reason: {self.classifier.error_message})")
+        )
         self.load_settings()
+
+    def _log_progress(self, message: str):
+        now = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+        print(f"[AOI {now}] {message}", flush=True)
 
     def init_ui(self):
         main_widget = QWidget()
@@ -456,6 +569,11 @@ class AOIInspector(QMainWindow):
         self.btn_roi_toggle.setText("Remove ROI" if self.roi_state.get("enabled") else "Add ROI")
 
     def set_status_info(self, text="Ready"):
+        if text == "Ready" and getattr(self, "classifier", None) is not None:
+            if self.classifier.available:
+                text = "Ready (CSPNet)"
+            else:
+                text = "Ready (Heuristic fallback)"
         self.status_label.setText(text)
         self.status_label.setStyleSheet(
             "background-color: #D7F5C3;"
@@ -514,6 +632,17 @@ class AOIInspector(QMainWindow):
         self.view_state["center_x"] = self.settings.value("view/center_x", self.view_state["center_x"], float)
         self.view_state["center_y"] = self.settings.value("view/center_y", self.view_state["center_y"], float)
 
+        self._saved_roi_enabled = self.settings.value("roi/enabled", False, bool)
+        roi_x = self.settings.value("roi/x", None)
+        roi_y = self.settings.value("roi/y", None)
+        roi_w = self.settings.value("roi/w", None)
+        roi_h = self.settings.value("roi/h", None)
+        if None not in (roi_x, roi_y, roi_w, roi_h):
+            try:
+                self._saved_roi_rect = (int(roi_x), int(roi_y), int(roi_w), int(roi_h))
+            except (TypeError, ValueError):
+                self._saved_roi_rect = None
+
     def save_settings(self):
         self.settings.setValue("thresholds/bf", self.slider_bf.value())
         self.settings.setValue("thresholds/df", self.slider_df.value())
@@ -534,6 +663,15 @@ class AOIInspector(QMainWindow):
         self.settings.setValue("view/scale", self.view_state.get("scale", 1.0))
         self.settings.setValue("view/center_x", self.view_state.get("center_x", 0.0))
         self.settings.setValue("view/center_y", self.view_state.get("center_y", 0.0))
+
+        self.settings.setValue("roi/enabled", self.roi_state.get("enabled", False))
+        rect = self.roi_state.get("rect")
+        if rect is not None:
+            x, y, w, h = rect
+            self.settings.setValue("roi/x", int(x))
+            self.settings.setValue("roi/y", int(y))
+            self.settings.setValue("roi/w", int(w))
+            self.settings.setValue("roi/h", int(h))
 
     def closeEvent(self, event):
         self.save_settings()
@@ -674,7 +812,28 @@ class AOIInspector(QMainWindow):
         self.img_bf_original = img_bf_gray
         self.img_df_original = img_df_gray
 
+        if self._saved_roi_enabled:
+            img_h, img_w = self.img_bf_original.shape
+            if self._saved_roi_rect is None:
+                roi_w = max(int(img_w * 0.5), 10)
+                roi_h = max(int(img_h * 0.5), 10)
+                roi_x = int((img_w - roi_w) / 2)
+                roi_y = int((img_h - roi_h) / 2)
+            else:
+                roi_x, roi_y, roi_w, roi_h = self._saved_roi_rect
+                roi_x = max(0, min(int(roi_x), img_w - 1))
+                roi_y = max(0, min(int(roi_y), img_h - 1))
+                roi_w = max(1, min(int(roi_w), img_w - roi_x))
+                roi_h = max(1, min(int(roi_h), img_h - roi_y))
+
+            self.roi_state["enabled"] = True
+            self.roi_state["rect"] = (roi_x, roi_y, roi_w, roi_h)
+        else:
+            self.roi_state["enabled"] = False
+            self.roi_state["rect"] = None
+
         self.reset_view_next_update = True
+        self.update_buttons_state(info_state=True)
         self.update_result()
 
     def resizeEvent(self, event: QResizeEvent):
@@ -685,6 +844,8 @@ class AOIInspector(QMainWindow):
     def perform_calculation(self):
         if self.img_bf_original is None or self.img_df_original is None:
             return
+
+        self._log_progress("Start processing (0%)")
 
         thresh_bf = self.spin_bf.value()
         thresh_df = self.spin_df.value()
@@ -733,6 +894,7 @@ class AOIInspector(QMainWindow):
             roi_rect = (x, y, w, h)
 
         if roi_rect:
+            self._log_progress("ROI mode detected (10%)")
             x, y, w, h = roi_rect
             img_bf_roi = img_bf[y:y + h, x:x + w]
             img_df_roi = img_df[y:y + h, x:x + w]
@@ -747,6 +909,7 @@ class AOIInspector(QMainWindow):
                 method=bf_method,
                 dog_params=dog_params,
             )
+            self._log_progress("Bright field processed (35%)")
 
             df_processed, mask_df_raw, mask_df_dilated, view_df_roi = process_dark_field(
                 img_df_roi,
@@ -756,6 +919,7 @@ class AOIInspector(QMainWindow):
                 iters=iters,
                 inverse_threshold=inverse_df,
             )
+            self._log_progress("Dark field processed (55%)")
 
             self.current_bf_processed = img_bf.copy()
             if bf_processed is not None:
@@ -806,9 +970,11 @@ class AOIInspector(QMainWindow):
                 view_res_roi[mask_df_dilated == 255] = [0, 255, 0]
 
             if show_bf_mask:
-                self.draw_defect_boxes(view_res, box_mask, offset=(x, y))
+                self.draw_defect_boxes(view_res, box_mask, source_gray=img_bf, offset=(x, y))
+                self._log_progress("Defect box classification complete (85%)")
 
             self.update_display_pixmaps(view_bf, view_df, view_res)
+            self._log_progress("Display updated (100%)")
             self.set_status_info()
             return
 
@@ -822,6 +988,7 @@ class AOIInspector(QMainWindow):
             method=bf_method,
             dog_params=dog_params,
         )
+        self._log_progress("Bright field processed (35%)")
 
         self.current_bf_processed = bf_processed
 
@@ -833,6 +1000,7 @@ class AOIInspector(QMainWindow):
             iters=iters,
             inverse_threshold=inverse_df,
         )
+        self._log_progress("Dark field processed (55%)")
 
         self.current_df_processed = df_processed
 
@@ -865,9 +1033,11 @@ class AOIInspector(QMainWindow):
             view_res[mask_df_dilated == 255] = [0, 255, 0]
 
         if show_bf_mask:
-            self.draw_defect_boxes(view_res, box_mask)
+            self.draw_defect_boxes(view_res, box_mask, source_gray=img_bf)
+            self._log_progress("Defect box classification complete (85%)")
 
         self.update_display_pixmaps(view_bf, view_df, view_res)
+        self._log_progress("Display updated (100%)")
         self.set_status_info()
 
     @Slot()
@@ -879,24 +1049,77 @@ class AOIInspector(QMainWindow):
             return
         self.perform_calculation()
 
-    def draw_defect_boxes(self, result_bgr: np.ndarray, defect_mask: np.ndarray, offset=(0, 0)):
-        if result_bgr is None or defect_mask is None:
+    def draw_defect_boxes(
+        self,
+        result_bgr: np.ndarray,
+        defect_mask: np.ndarray,
+        source_gray: np.ndarray,
+        offset=(0, 0),
+    ):
+        if result_bgr is None or defect_mask is None or source_gray is None:
             return
 
         num_labels, _, stats, _ = cv2.connectedComponentsWithStats(defect_mask, connectivity=8)
+        total_boxes = max(0, num_labels - 1)
+        self._log_progress(f"Classifying {total_boxes} defect boxes")
         ox, oy = offset
+        image_h, image_w = source_gray.shape[:2]
 
-        for label in range(1, num_labels):
+        for idx, label in enumerate(range(1, num_labels), start=1):
             x, y, w, h, area = stats[label]
             if area <= 0:
                 continue
 
+            x1 = int(x + ox)
+            y1 = int(y + oy)
+            x2 = int(x + ox + w)
+            y2 = int(y + oy + h)
+
+            x1 = max(0, min(x1, image_w - 1))
+            y1 = max(0, min(y1, image_h - 1))
+            x2 = max(x1 + 1, min(x2, image_w))
+            y2 = max(y1 + 1, min(y2, image_h))
+
+            patch = source_gray[y1:y2, x1:x2]
+            if patch.size == 0:
+                defect_label, ng_score = "N/A", 0.0
+            else:
+                patch_bgr = cv2.cvtColor(patch, cv2.COLOR_GRAY2BGR)
+                defect_label, ng_score = self.classifier.classify(patch_bgr)
+
+            if idx % 10 == 0 or idx == total_boxes:
+                self._log_progress(f"Box classification progress: {idx}/{total_boxes}")
+
             cv2.rectangle(
                 result_bgr,
-                (int(x + ox), int(y + oy)),
-                (int(x + ox + w - 1), int(y + oy + h - 1)),
+                (x1, y1),
+                (x2 - 1, y2 - 1),
                 (255, 0, 255),
                 2,
+            )
+
+            text = f"{defect_label} ({ng_score:.2f})"
+            text_x = x1
+            text_y = y1 - 6 if y1 > 18 else min(y2 + 18, image_h - 4)
+            cv2.putText(
+                result_bgr,
+                text,
+                (text_x, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                result_bgr,
+                text,
+                (text_x, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 0, 0),
+                1,
+                cv2.LINE_AA,
             )
 
     def add_roi(self):
